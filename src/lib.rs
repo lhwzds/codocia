@@ -6,6 +6,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+const DIFF_LINE_LIMIT: usize = 80;
+
 #[derive(Debug, Clone)]
 pub struct SnapshotConfig {
     pub workspace: PathBuf,
@@ -195,6 +197,7 @@ pub fn check(config: &CheckConfig) -> Result<()> {
         })
         .filter(|(_, docs)| !docs.is_empty())
         .collect::<Vec<_>>();
+    let diff_review_files = diff_review_files(&stale_docs, &uncovered_changed);
 
     if broken_covers.is_empty()
         && stale_docs.is_empty()
@@ -267,8 +270,68 @@ pub fn check(config: &CheckConfig) -> Result<()> {
             message.push_str(&format!("\n- {}", path.display()));
         }
     }
+    append_diff_review(
+        &mut message,
+        &workspace,
+        config.base.as_deref(),
+        &diff_review_files,
+    );
 
     bail!(message);
+}
+
+fn diff_review_files(
+    stale_docs: &BTreeMap<PathBuf, Vec<PathBuf>>,
+    uncovered_changed: &[PathBuf],
+) -> BTreeSet<PathBuf> {
+    let mut files = BTreeSet::new();
+    for covered_files in stale_docs.values() {
+        files.extend(covered_files.iter().cloned());
+    }
+    files.extend(uncovered_changed.iter().cloned());
+    files
+}
+
+fn append_diff_review(
+    message: &mut String,
+    workspace: &Path,
+    base: Option<&str>,
+    files: &BTreeSet<PathBuf>,
+) {
+    if files.is_empty() {
+        return;
+    }
+
+    message.push_str("\n\ngit diff review:");
+    message.push_str(
+        "\nHash changes mean the docs need review. Update prose only when the diff changes documented behavior.",
+    );
+    for path in files {
+        message.push_str(&format!("\n- {}", path.display()));
+        let sections = match git_diff_sections(workspace, base, path) {
+            Ok(sections) => sections,
+            Err(error) => {
+                message.push_str(&format!("\n  diff unavailable: {error}"));
+                continue;
+            }
+        };
+        if sections.is_empty() {
+            message.push_str(
+                "\n  no git diff output; the file hash changed outside the selected diff range",
+            );
+            continue;
+        }
+        for section in sections {
+            message.push_str(&format!("\n  {} ({})", section.label, section.command));
+            push_indented_diff(message, &diff_excerpt(&section.diff), "    ");
+        }
+    }
+}
+
+struct DiffSection {
+    label: &'static str,
+    command: String,
+    diff: String,
 }
 
 fn read_doc_pages(docs_dir: &Path) -> Result<Vec<DocPage>> {
@@ -636,6 +699,97 @@ fn git_diff_names(workspace: &Path, args: &[&str]) -> Result<BTreeSet<PathBuf>> 
         .collect())
 }
 
+fn git_diff_sections(
+    workspace: &Path,
+    base: Option<&str>,
+    path: &Path,
+) -> Result<Vec<DiffSection>> {
+    let mut sections = Vec::new();
+    if let Some(base) = base {
+        let range = format!("{base}...HEAD");
+        let diff = git_diff_for_file(workspace, &[range.as_str()], path)?;
+        if !diff.trim().is_empty() {
+            sections.push(DiffSection {
+                label: "committed",
+                command: format!("git diff {range} -- {}", path.display()),
+                diff,
+            });
+        }
+    }
+
+    let staged = git_diff_for_file(workspace, &["--cached"], path)?;
+    if !staged.trim().is_empty() {
+        sections.push(DiffSection {
+            label: "staged",
+            command: format!("git diff --cached -- {}", path.display()),
+            diff: staged,
+        });
+    }
+
+    let unstaged = git_diff_for_file(workspace, &[], path)?;
+    if !unstaged.trim().is_empty() {
+        sections.push(DiffSection {
+            label: "unstaged",
+            command: format!("git diff -- {}", path.display()),
+            diff: unstaged,
+        });
+    }
+
+    Ok(sections)
+}
+
+fn git_diff_for_file(workspace: &Path, args: &[&str], path: &Path) -> Result<String> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(workspace)
+        .arg("diff")
+        .arg("--unified=3");
+    for arg in args {
+        command.arg(arg);
+    }
+    command.arg("--").arg(path);
+
+    let output = command
+        .output()
+        .with_context(|| format!("failed to run git diff from {}", workspace.display()))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("git diff failed: {stderr}");
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn diff_excerpt(diff: &str) -> String {
+    let lines = diff.lines().collect::<Vec<_>>();
+    if lines.len() <= DIFF_LINE_LIMIT {
+        return diff.trim_end().to_string();
+    }
+
+    let mut output = lines
+        .iter()
+        .take(DIFF_LINE_LIMIT)
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n");
+    output.push_str(&format!(
+        "\n... truncated {} line(s); run the command above for the full diff",
+        lines.len() - DIFF_LINE_LIMIT
+    ));
+    output
+}
+
+fn push_indented_diff(message: &mut String, diff: &str, indent: &str) {
+    if diff.is_empty() {
+        return;
+    }
+    for line in diff.lines() {
+        message.push('\n');
+        message.push_str(indent);
+        message.push_str(line);
+    }
+}
+
 fn current_commit(workspace: &Path) -> Result<String> {
     let output = Command::new("git")
         .arg("-C")
@@ -840,7 +994,22 @@ mod tests {
 
         assert!(error.contains("stale docs"));
         assert!(error.contains("docs/runtime.md"));
+        assert!(error.contains("git diff review"));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn diff_excerpt_truncates_long_output() {
+        let diff = (0..(DIFF_LINE_LIMIT + 2))
+            .map(|index| format!("line {index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let excerpt = diff_excerpt(&diff);
+
+        assert!(excerpt.contains("line 0"));
+        assert!(!excerpt.contains(&format!("line {}", DIFF_LINE_LIMIT + 1)));
+        assert!(excerpt.contains("truncated 2 line(s)"));
     }
 
     fn temp_dir(name: &str) -> PathBuf {

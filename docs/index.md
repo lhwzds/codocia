@@ -17,9 +17,16 @@ records which source files each page covers.
 ## Maintenance Loop
 
 1. Update the human-readable docs when code behavior changes.
-2. Run `codocia snapshot --docs docs` to refresh file hashes.
-3. Run `codocia check --docs docs --base main` before committing.
+2. Run `codocia check --base main` and inspect the built-in
+   `git diff review` section for stale or uncovered files.
+3. Run `codocia snapshot` to refresh file hashes after docs have
+   been reviewed.
+4. Run `codocia check --base main` before committing.
 
 Do not update snapshot metadata before updating the docs body. A fresh snapshot
 only proves that docs were reviewed against the current code; it does not prove
 that the prose is complete.
+
+If a hash changed but the git diff is formatting-only, comment-only, test-only,
+or otherwise not documentation-impacting, keep the docs body unchanged and only
+refresh the snapshot after review.

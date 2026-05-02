@@ -29,6 +29,11 @@ update prose first, then refresh metadata.
 - changed Rust or Python files with no docs coverage when `--base` is provided;
 - Rust or Python files in the workspace that are not covered by any docs page.
 
+For stale or uncovered changed files, the report includes a `git diff review`
+section. The library renders committed, staged, and unstaged diff excerpts for
+the relevant files. This keeps the default `check` command useful for both
+humans and agents without adding a separate JSON or planning mode.
+
 ## Git Binding
 
 When a base ref is provided, the library reads three git diff sources:
@@ -38,6 +43,11 @@ When a base ref is provided, the library reads three git diff sources:
 - unstaged changes.
 
 This keeps `codocia check --base main` useful before and after files are staged.
+
+The diff output is advisory. A changed hash means the docs need review, not that
+the prose must always change. Agents should use the diff excerpts to distinguish
+documented behavior changes from formatting, comment, test, or internal-only
+changes.
 
 ## Matching and Hashing
 

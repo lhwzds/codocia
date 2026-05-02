@@ -11,11 +11,14 @@ The Codocia CLI exposes the smallest useful documentation drift loop:
 - `codocia`
 - `codocia skill`
 - `codocia init`
-- `codocia snapshot --docs docs`
-- `codocia check --docs docs --base main`
+- `codocia snapshot`
+- `codocia check --base main`
 
 The binary is intentionally thin. It parses command-line arguments with `clap`
 and delegates behavior to the library API.
+
+`docs` and the current directory are defaults. Use `--docs <path>` or
+`--workspace <path>` only for non-standard repository layouts.
 
 ## Commands
 
@@ -31,6 +34,15 @@ hashes the matched files, and writes snapshot metadata to `docs/.codocia-snapsho
 `check` verifies documentation coverage and freshness. When `--base` is passed,
 it combines committed, staged, and unstaged git diff results so local development
 changes are included.
+
+When `check` fails because files are stale or changed without coverage, it also
+prints a `git diff review` section. That section includes committed, staged, and
+unstaged diff excerpts for the relevant files, so an agent can decide whether the
+hash change actually affects documented behavior.
+
+Hash changes are review signals. If the diff is formatting-only, comment-only,
+test-only, or internal-only, the correct action can be refreshing the snapshot
+without changing the docs body.
 
 ## Boundary
 

@@ -10,12 +10,14 @@ folder.
 
 ## Maintenance Loop
 
-1. Run `codocia check --docs docs --base main`.
-2. Read every stale docs page and the code files reported by the check.
-3. Update the human-readable Markdown body first.
+1. Run `codocia check --base main`.
+2. Read every stale docs page and the `git diff review` excerpts reported by
+   the check.
+3. Update the human-readable Markdown body only when the diff changes documented
+   behavior.
 4. Add or adjust `covers` when changed code is uncovered.
-5. Run `codocia snapshot --docs docs`.
-6. Run `codocia check --docs docs --base main` again.
+5. Run `codocia snapshot`.
+6. Run `codocia check --base main` again.
 
 ## Starlight Publishing
 
@@ -35,6 +37,8 @@ It should not commit copied product docs as source of truth.
 
 ## Validation
 
-- Run `codocia check --docs docs --base main` before committing docs.
+- Run `codocia check --base main` before committing docs.
 - Run the website build after changing fetch/sync logic.
+- If the diff is formatting-only, comment-only, test-only, or internal-only,
+  keep prose unchanged and refresh the snapshot after review.
 - A passing snapshot check means file hashes are current; it does not prove the prose is complete.
