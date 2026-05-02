@@ -19,6 +19,10 @@ pub struct CheckConfig {
     pub base: Option<String>,
 }
 
+pub fn skill_prompt() -> &'static str {
+    include_str!("../SKILL.md")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DocPage {
     relative_path: PathBuf,
@@ -45,7 +49,6 @@ struct DocSnapshot {
 pub fn init(path: impl AsRef<Path>) -> Result<()> {
     let root = path.as_ref();
     fs::create_dir_all(root.join("docs"))?;
-    fs::create_dir_all(root.join(".codocia"))?;
 
     let config_path = root.join("codocia.toml");
     if !config_path.exists() {
@@ -93,7 +96,7 @@ pub fn snapshot(config: &SnapshotConfig) -> Result<()> {
         );
     }
 
-    write_snapshot_file(&workspace, &snapshot)?;
+    write_snapshot_file(&docs_dir, &snapshot)?;
 
     println!("snapshot updated {} doc page(s)", snapshot.docs.len());
     for path in snapshot.docs.keys() {
@@ -107,7 +110,7 @@ pub fn check(config: &CheckConfig) -> Result<()> {
     let workspace = normalize_dir(&config.workspace)?;
     let docs_dir = resolve_path(&workspace, &config.docs);
     let pages = read_doc_pages(&docs_dir)?;
-    let snapshot = read_snapshot_file(&workspace)?;
+    let snapshot = read_snapshot_file(&docs_dir)?;
     let code_files = collect_code_files(&workspace, &docs_dir)?;
     let changed_files = if let Some(base) = &config.base {
         changed_files(&workspace, base)?
@@ -357,21 +360,18 @@ fn snapshot_files(workspace: &Path, covers: &[String]) -> Result<BTreeMap<PathBu
         .collect()
 }
 
-fn snapshot_path(workspace: &Path) -> PathBuf {
-    workspace.join(".codocia/snapshot.json")
+fn snapshot_path(docs_dir: &Path) -> PathBuf {
+    docs_dir.join(".codocia-snapshot.json")
 }
 
-fn write_snapshot_file(workspace: &Path, snapshot: &Snapshot) -> Result<()> {
-    let path = snapshot_path(workspace);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+fn write_snapshot_file(docs_dir: &Path, snapshot: &Snapshot) -> Result<()> {
+    let path = snapshot_path(docs_dir);
     fs::write(path, render_snapshot(snapshot)?)?;
     Ok(())
 }
 
-fn read_snapshot_file(workspace: &Path) -> Result<Snapshot> {
-    let path = snapshot_path(workspace);
+fn read_snapshot_file(docs_dir: &Path) -> Result<Snapshot> {
+    let path = snapshot_path(docs_dir);
     let content =
         fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
     parse_snapshot(&content)

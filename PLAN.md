@@ -8,7 +8,7 @@ AI-agent workflow checks.
 
 1. `docs/**/*.md` pages declare covered code paths in frontmatter.
 2. `codocia snapshot` records the current commit and covered file hashes in
-   `.codocia/snapshot.json`.
+   `docs/.codocia-snapshot.json`.
 3. `codocia check` reports:
    - broken cover patterns;
    - stale docs when covered file hashes changed;

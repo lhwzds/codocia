@@ -62,7 +62,7 @@ covers:
 ```
 
 `codocia snapshot` expands those patterns, hashes the matched files, and writes
-the result to `.codocia/snapshot.json`:
+the result to `docs/.codocia-snapshot.json`:
 
 ```json
 {
@@ -79,8 +79,8 @@ the result to `.codocia/snapshot.json`:
 }
 ```
 
-`codocia check` compares the stored hashes in `.codocia/snapshot.json` with the
-current files. If a covered file changed, the page is stale.
+`codocia check` compares the stored hashes in `docs/.codocia-snapshot.json`
+with the current files. If a covered file changed, the page is stale.
 
 When `--base main` is provided, Codocia also reads git diff information from:
 
@@ -99,11 +99,20 @@ codocia init
 Creates `codocia.toml` and `docs/index.md` if they do not exist.
 
 ```bash
+codocia
+codocia skill
+```
+
+Prints the Codocia docs skill from `SKILL.md` to stdout. This is intended for
+AI agents that need the operating rules without Codocia writing a local skill
+folder.
+
+```bash
 codocia snapshot --docs docs
 ```
 
-Updates `.codocia/snapshot.json` for every docs page with `covers`. It does not
-rewrite Markdown pages.
+Updates `docs/.codocia-snapshot.json` for every docs page with `covers`. It
+does not rewrite Markdown pages.
 
 ```bash
 codocia check --docs docs --base main
@@ -182,7 +191,7 @@ jobs:
 ## MVP Scope
 
 - Markdown frontmatter declares `covers`.
-- `.codocia/snapshot.json` stores expanded file hashes.
+- `docs/.codocia-snapshot.json` stores expanded file hashes.
 - Rust and Python files are treated as code files.
 - File freshness uses deterministic content hashes.
 - Git diff is used only when `--base` is provided.

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use codocia::{CheckConfig, SnapshotConfig, check, init, snapshot};
+use codocia::{CheckConfig, SnapshotConfig, check, init, skill_prompt, snapshot};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[command(about = "Keep Markdown docs synchronized with fast-moving code.")]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -31,18 +31,25 @@ enum Command {
         #[arg(long)]
         base: Option<String>,
     },
+    Skill,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Init { path } => init(path),
-        Command::Snapshot { workspace, docs } => snapshot(&SnapshotConfig { workspace, docs }),
-        Command::Check {
+        None | Some(Command::Skill) => {
+            print!("{}", skill_prompt());
+            Ok(())
+        }
+        Some(Command::Init { path }) => init(path),
+        Some(Command::Snapshot { workspace, docs }) => {
+            snapshot(&SnapshotConfig { workspace, docs })
+        }
+        Some(Command::Check {
             workspace,
             docs,
             base,
-        } => check(&CheckConfig {
+        }) => check(&CheckConfig {
             workspace,
             docs,
             base,

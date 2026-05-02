@@ -14,14 +14,14 @@ files.
 
 `snapshot` scans `docs/**/*.md` and processes pages with `covers` metadata. Each
 cover pattern is expanded relative to the workspace, matched files are hashed,
-and the result is written to `.codocia/snapshot.json`.
+and the result is written to `docs/.codocia-snapshot.json`.
 
 The snapshot operation does not rewrite Markdown pages. Agents and humans must
 update prose first, then refresh metadata.
 
 ## Check
 
-`check` reads Markdown `covers` plus `.codocia/snapshot.json` and reports:
+`check` reads Markdown `covers` plus `docs/.codocia-snapshot.json` and reports:
 
 - cover patterns that match no files;
 - docs whose recorded file hashes differ from current file content;

@@ -1,16 +1,16 @@
 {
-  "commit": "c081e2780a32224bce56cf81bb11adc6e052e337",
+  "commit": "53cf72b3daf6758eb5466f79465e1b625deb685d",
   "docs": {
     "docs/cli.md": {
       "covers": ["src/main.rs"],
       "files": {
-        "src/main.rs": "c3afadd0c6e540a3"
+        "src/main.rs": "30902bed3557e5dd"
       }
     },
     "docs/library.md": {
       "covers": ["src/lib.rs"],
       "files": {
-        "src/lib.rs": "ebded28cb4747ad3"
+        "src/lib.rs": "e2594e655e4dd042"
       }
     }
   }
