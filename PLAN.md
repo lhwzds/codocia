@@ -1,54 +1,31 @@
-# Codocia Implementation Plan
+# Codocia Plan
 
-## Goal
+Codocia should solve documentation drift for fast-moving codebases. Markdown
+docs stay as the source of truth, while Codocia provides coverage, staleness, and
+AI-agent workflow checks.
 
-Build the smallest useful documentation generator first:
+## MVP
 
-```text
-Rust doc comments with Codocia Markdown -> deterministic CODOCIA.md and module pages
-```
+1. `docs/**/*.md` pages declare covered code paths in frontmatter.
+2. `codocia snapshot` records the current commit and covered file hashes.
+3. `codocia check` reports:
+   - broken cover patterns;
+   - stale docs when covered file hashes changed;
+   - missing covered files;
+   - changed code files without docs coverage when `--base` is provided;
+   - uncovered Rust and Python source files.
 
-## Phase 1
+## Next
 
-1. Implement CLI commands:
-   - `init`
-   - `generate`
-   - `check`
-2. Scan Rust crates under a workspace path.
-3. For each crate:
-   - read `Cargo.toml`;
-   - read `src/lib.rs` or `src/main.rs`;
-   - extract the crate-level `# codocia` Markdown block.
-4. Parse the supported Markdown sections:
-   - summary paragraph;
-   - `## Owns`;
-   - `## Must Not`;
-   - `## Inputs`;
-   - `## Outputs`;
-   - `## Depends On`;
-   - `## Used By`;
-   - `## Verify`.
-5. Generate:
-   - `CODOCIA.md` with Mermaid module graph and links;
-   - one `{module}.md` page per module with structured boundaries.
-6. Make `check` render docs in memory and compare output.
+1. Add `codocia plan --base main` to produce an AI-readable docs update task.
+2. Add `codocia context` to package stale docs and changed code for agents.
+3. Add configurable source include/exclude patterns in `codocia.toml`.
+4. Add raw Markdown and `llms.txt` build output after the coverage loop is
+   stable.
 
-## Phase 2
+## Non-Goals
 
-1. Add file-level and item-level Codocia blocks.
-2. Add recipes.
-3. Add public item inventory.
-4. Add examples extraction.
-
-## Phase 3
-
-1. Add mdBook output.
-2. Add GitHub Pages workflow scaffold.
-3. Add language adapters beyond Rust.
-
-## Design Constraints
-
-- Keep output deterministic.
-- Keep the CLI stable.
-- Keep the library API usable by other tools.
-- Avoid nightly-only APIs in the first release.
+- No source-comment documentation extraction.
+- No automatic prose generation inside Codocia.
+- No HTML theme or site renderer in the MVP.
+- No replacement for rustdoc, pdoc, TypeDoc, MkDocs, or Starlight.

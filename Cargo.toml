@@ -3,11 +3,13 @@ name = "codocia"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Generate readable Markdown documentation from code structure and public APIs."
+description = "Detect documentation drift between Markdown docs and fast-moving code."
 repository = "https://github.com/lhwzds/codocia"
+documentation = "https://docs.rs/codocia"
 readme = "README.md"
-keywords = ["docs", "markdown", "rust", "documentation"]
+keywords = ["docs", "markdown", "drift", "documentation"]
 categories = ["development-tools", "command-line-utilities"]
+exclude = ["PLAN.md"]
 
 [[bin]]
 name = "codocia"
