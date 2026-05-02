@@ -2,10 +2,6 @@
 title: Library Implementation
 covers:
   - src/lib.rs
-codocia:
-  commit: 62f4bf566055ece6bf75cbe6e33dda37ccbb4c94
-  files:
-    src/lib.rs: 3608d69501648357
 ---
 
 # Library Implementation
@@ -18,14 +14,14 @@ files.
 
 `snapshot` scans `docs/**/*.md` and processes pages with `covers` metadata. Each
 cover pattern is expanded relative to the workspace, matched files are hashed,
-and the result is written back into the page's `codocia.files` block.
+and the result is written to `.codocia/snapshot.json`.
 
-The snapshot operation does not rewrite the Markdown body. Agents and humans
-must update prose first, then refresh metadata.
+The snapshot operation does not rewrite Markdown pages. Agents and humans must
+update prose first, then refresh metadata.
 
 ## Check
 
-`check` reads the same metadata and reports:
+`check` reads Markdown `covers` plus `.codocia/snapshot.json` and reports:
 
 - cover patterns that match no files;
 - docs whose recorded file hashes differ from current file content;

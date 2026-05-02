@@ -62,18 +62,25 @@ covers:
 ```
 
 `codocia snapshot` expands those patterns, hashes the matched files, and writes
-the result back into the page frontmatter:
+the result to `.codocia/snapshot.json`:
 
-```yaml
-codocia:
-  commit: abc123
-  files:
-    crates/runtime/src/lib.rs: 9f2a...
-    python/skrun/runtime.py: 81bc...
+```json
+{
+  "commit": "abc123",
+  "docs": {
+    "docs/runtime.md": {
+      "covers": ["crates/runtime/**", "python/skrun/runtime.py"],
+      "files": {
+        "crates/runtime/src/lib.rs": "9f2a...",
+        "python/skrun/runtime.py": "81bc..."
+      }
+    }
+  }
+}
 ```
 
-`codocia check` compares the stored hashes with the current files. If a covered
-file changed, the page is stale.
+`codocia check` compares the stored hashes in `.codocia/snapshot.json` with the
+current files. If a covered file changed, the page is stale.
 
 When `--base main` is provided, Codocia also reads git diff information from:
 
@@ -95,8 +102,8 @@ Creates `codocia.toml` and `docs/index.md` if they do not exist.
 codocia snapshot --docs docs
 ```
 
-Updates `codocia.commit` and `codocia.files` in every docs page with `covers`.
-It does not rewrite the page body.
+Updates `.codocia/snapshot.json` for every docs page with `covers`. It does not
+rewrite Markdown pages.
 
 ```bash
 codocia check --docs docs --base main
@@ -174,7 +181,8 @@ jobs:
 
 ## MVP Scope
 
-- Markdown frontmatter is the binding layer.
+- Markdown frontmatter declares `covers`.
+- `.codocia/snapshot.json` stores expanded file hashes.
 - Rust and Python files are treated as code files.
 - File freshness uses deterministic content hashes.
 - Git diff is used only when `--base` is provided.

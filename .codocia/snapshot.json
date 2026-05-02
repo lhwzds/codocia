@@ -1,0 +1,17 @@
+{
+  "commit": "c081e2780a32224bce56cf81bb11adc6e052e337",
+  "docs": {
+    "docs/cli.md": {
+      "covers": ["src/main.rs"],
+      "files": {
+        "src/main.rs": "c3afadd0c6e540a3"
+      }
+    },
+    "docs/library.md": {
+      "covers": ["src/lib.rs"],
+      "files": {
+        "src/lib.rs": "ebded28cb4747ad3"
+      }
+    }
+  }
+}

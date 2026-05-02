@@ -2,10 +2,6 @@
 title: CLI Workflow
 covers:
   - src/main.rs
-codocia:
-  commit: 62f4bf566055ece6bf75cbe6e33dda37ccbb4c94
-  files:
-    src/main.rs: c3afadd0c6e540a3
 ---
 
 # CLI Workflow
@@ -25,7 +21,7 @@ and delegates behavior to the library API.
 `docs/index.md` only when those files do not already exist.
 
 `snapshot` reads Markdown frontmatter, expands each page's `covers` patterns,
-hashes the matched files, and writes the snapshot metadata back into the page.
+hashes the matched files, and writes snapshot metadata to `.codocia/snapshot.json`.
 
 `check` verifies documentation coverage and freshness. When `--base` is passed,
 it combines committed, staged, and unstaged git diff results so local development

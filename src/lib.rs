@@ -21,30 +21,31 @@ pub struct CheckConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DocPage {
-    path: PathBuf,
     relative_path: PathBuf,
-    content: String,
     frontmatter: Option<Frontmatter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Frontmatter {
-    text: String,
-    body: String,
+    covers: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Snapshot {
+    commit: String,
+    docs: BTreeMap<PathBuf, DocSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DocSnapshot {
     covers: Vec<String>,
     files: BTreeMap<PathBuf, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct FileSnapshot {
-    path: PathBuf,
-    hash: String,
-}
-
 pub fn init(path: impl AsRef<Path>) -> Result<()> {
     let root = path.as_ref();
-    let docs_dir = root.join("docs");
-    fs::create_dir_all(&docs_dir)?;
+    fs::create_dir_all(root.join("docs"))?;
+    fs::create_dir_all(root.join(".codocia"))?;
 
     let config_path = root.join("codocia.toml");
     if !config_path.exists() {
@@ -54,7 +55,7 @@ pub fn init(path: impl AsRef<Path>) -> Result<()> {
         )?;
     }
 
-    let index_path = docs_dir.join("index.md");
+    let index_path = root.join("docs/index.md");
     if !index_path.exists() {
         fs::write(
             index_path,
@@ -69,10 +70,13 @@ pub fn snapshot(config: &SnapshotConfig) -> Result<()> {
     let workspace = normalize_dir(&config.workspace)?;
     let docs_dir = resolve_path(&workspace, &config.docs);
     let commit = current_commit(&workspace).unwrap_or_else(|_| "unknown".to_string());
-    let mut updated = Vec::new();
+    let mut snapshot = Snapshot {
+        commit,
+        docs: BTreeMap::new(),
+    };
 
     for page in read_doc_pages(&docs_dir)? {
-        let Some(frontmatter) = &page.frontmatter else {
+        let Some(frontmatter) = page.frontmatter else {
             continue;
         };
         if frontmatter.covers.is_empty() {
@@ -80,14 +84,19 @@ pub fn snapshot(config: &SnapshotConfig) -> Result<()> {
         }
 
         let files = snapshot_files(&workspace, &frontmatter.covers)?;
-        let content = write_snapshot(&page.content, &files, &commit)?;
-        fs::write(&page.path, content)
-            .with_context(|| format!("failed to write {}", page.path.display()))?;
-        updated.push(page.relative_path);
+        snapshot.docs.insert(
+            page.relative_path,
+            DocSnapshot {
+                covers: frontmatter.covers,
+                files,
+            },
+        );
     }
 
-    println!("snapshot updated {} doc page(s)", updated.len());
-    for path in updated {
+    write_snapshot_file(&workspace, &snapshot)?;
+
+    println!("snapshot updated {} doc page(s)", snapshot.docs.len());
+    for path in snapshot.docs.keys() {
         println!("- {}", path.display());
     }
 
@@ -98,6 +107,7 @@ pub fn check(config: &CheckConfig) -> Result<()> {
     let workspace = normalize_dir(&config.workspace)?;
     let docs_dir = resolve_path(&workspace, &config.docs);
     let pages = read_doc_pages(&docs_dir)?;
+    let snapshot = read_snapshot_file(&workspace)?;
     let code_files = collect_code_files(&workspace, &docs_dir)?;
     let changed_files = if let Some(base) = &config.base {
         changed_files(&workspace, base)?
@@ -109,6 +119,7 @@ pub fn check(config: &CheckConfig) -> Result<()> {
     let mut broken_covers = Vec::new();
     let mut stale_docs = BTreeMap::<PathBuf, Vec<PathBuf>>::new();
     let mut missing_files = BTreeMap::<PathBuf, Vec<PathBuf>>::new();
+    let mut missing_snapshots = Vec::new();
 
     for page in &pages {
         let Some(frontmatter) = &page.frontmatter else {
@@ -127,7 +138,16 @@ pub fn check(config: &CheckConfig) -> Result<()> {
             }
         }
 
-        for (path, expected_hash) in &frontmatter.files {
+        if frontmatter.covers.is_empty() {
+            continue;
+        }
+
+        let Some(doc_snapshot) = snapshot.docs.get(&page.relative_path) else {
+            missing_snapshots.push(page.relative_path.clone());
+            continue;
+        };
+
+        for (path, expected_hash) in &doc_snapshot.files {
             let absolute_path = workspace.join(path);
             if !absolute_path.exists() {
                 missing_files
@@ -176,6 +196,7 @@ pub fn check(config: &CheckConfig) -> Result<()> {
     if broken_covers.is_empty()
         && stale_docs.is_empty()
         && missing_files.is_empty()
+        && missing_snapshots.is_empty()
         && uncovered.is_empty()
         && uncovered_changed.is_empty()
     {
@@ -187,8 +208,7 @@ pub fn check(config: &CheckConfig) -> Result<()> {
         return Ok(());
     }
 
-    let mut message = String::new();
-    message.push_str("codocia check failed");
+    let mut message = String::from("codocia check failed");
     if !broken_covers.is_empty() {
         message.push_str("\n\nbroken covers:");
         for (doc, pattern) in broken_covers {
@@ -197,6 +217,12 @@ pub fn check(config: &CheckConfig) -> Result<()> {
                 doc.display(),
                 pattern
             ));
+        }
+    }
+    if !missing_snapshots.is_empty() {
+        message.push_str("\n\nmissing snapshots:");
+        for doc in missing_snapshots {
+            message.push_str(&format!("\n- {}", doc.display()));
         }
     }
     if !stale_docs.is_empty() {
@@ -252,7 +278,6 @@ fn read_doc_pages(docs_dir: &Path) -> Result<Vec<DocPage>> {
         .map(|path| {
             let content = fs::read_to_string(&path)
                 .with_context(|| format!("failed to read {}", path.display()))?;
-            let frontmatter = parse_frontmatter(&content);
             let relative_path = docs_dir
                 .file_name()
                 .map(PathBuf::from)
@@ -260,9 +285,7 @@ fn read_doc_pages(docs_dir: &Path) -> Result<Vec<DocPage>> {
                 .join(relative_path(docs_dir, &path));
             Ok(DocPage {
                 relative_path,
-                path,
-                content,
-                frontmatter,
+                frontmatter: parse_frontmatter(&content),
             })
         })
         .collect()
@@ -290,13 +313,9 @@ fn collect_markdown_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 fn parse_frontmatter(content: &str) -> Option<Frontmatter> {
     let rest = content.strip_prefix("---\n")?;
     let end = rest.find("\n---\n")?;
-    let text = rest[..end].to_string();
-    let body = rest[end + "\n---\n".len()..].to_string();
+    let text = &rest[..end];
     Some(Frontmatter {
-        covers: parse_covers(&text),
-        files: parse_snapshot_files(&text),
-        text,
-        body,
+        covers: parse_covers(text),
     })
 }
 
@@ -319,74 +338,7 @@ fn parse_covers(text: &str) -> Vec<String> {
     covers
 }
 
-fn parse_snapshot_files(text: &str) -> BTreeMap<PathBuf, String> {
-    let mut files = BTreeMap::new();
-    let mut in_codocia = false;
-    let mut in_files = false;
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed == "codocia:" {
-            in_codocia = true;
-            in_files = false;
-            continue;
-        }
-        if in_codocia && is_top_level_key(line) {
-            break;
-        }
-        if in_codocia && trimmed == "files:" {
-            in_files = true;
-            continue;
-        }
-        if in_files {
-            if trimmed.is_empty() {
-                continue;
-            }
-            if line.starts_with("    ")
-                && let Some((path, hash)) = trimmed.split_once(": ")
-            {
-                files.insert(PathBuf::from(path), hash.to_string());
-            }
-        }
-    }
-    files
-}
-
-fn write_snapshot(content: &str, files: &[FileSnapshot], commit: &str) -> Result<String> {
-    let frontmatter = parse_frontmatter(content).context("snapshot requires frontmatter")?;
-    let mut lines = Vec::new();
-    let mut skip_codocia = false;
-
-    for line in frontmatter.text.lines() {
-        if line.trim() == "codocia:" {
-            skip_codocia = true;
-            continue;
-        }
-        if skip_codocia && is_top_level_key(line) {
-            skip_codocia = false;
-        }
-        if !skip_codocia {
-            lines.push(line.to_string());
-        }
-    }
-
-    while lines.last().is_some_and(|line| line.trim().is_empty()) {
-        lines.pop();
-    }
-    lines.push("codocia:".to_string());
-    lines.push(format!("  commit: {commit}"));
-    lines.push("  files:".to_string());
-    for file in files {
-        lines.push(format!("    {}: {}", file.path.display(), file.hash));
-    }
-
-    Ok(format!(
-        "---\n{}\n---\n{}",
-        lines.join("\n"),
-        frontmatter.body
-    ))
-}
-
-fn snapshot_files(workspace: &Path, covers: &[String]) -> Result<Vec<FileSnapshot>> {
+fn snapshot_files(workspace: &Path, covers: &[String]) -> Result<BTreeMap<PathBuf, String>> {
     let mut paths = BTreeSet::new();
     for pattern in covers {
         let matches = files_matching(workspace, pattern)?;
@@ -400,12 +352,195 @@ fn snapshot_files(workspace: &Path, covers: &[String]) -> Result<Vec<FileSnapsho
         .into_iter()
         .map(|path| {
             let absolute_path = workspace.join(&path);
-            Ok(FileSnapshot {
-                path,
-                hash: hash_file(&absolute_path)?,
-            })
+            Ok((path, hash_file(&absolute_path)?))
         })
         .collect()
+}
+
+fn snapshot_path(workspace: &Path) -> PathBuf {
+    workspace.join(".codocia/snapshot.json")
+}
+
+fn write_snapshot_file(workspace: &Path, snapshot: &Snapshot) -> Result<()> {
+    let path = snapshot_path(workspace);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, render_snapshot(snapshot)?)?;
+    Ok(())
+}
+
+fn read_snapshot_file(workspace: &Path) -> Result<Snapshot> {
+    let path = snapshot_path(workspace);
+    let content =
+        fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    parse_snapshot(&content)
+}
+
+fn render_snapshot(snapshot: &Snapshot) -> Result<String> {
+    let mut output = String::new();
+    output.push_str("{\n");
+    output.push_str(&format!(
+        "  \"commit\": \"{}\",\n",
+        escape_json(&snapshot.commit)
+    ));
+    output.push_str("  \"docs\": {\n");
+    for (index, (doc, doc_snapshot)) in snapshot.docs.iter().enumerate() {
+        output.push_str(&format!("    \"{}\": {{\n", escape_json_path(doc)));
+        output.push_str("      \"covers\": [");
+        for (cover_index, cover) in doc_snapshot.covers.iter().enumerate() {
+            if cover_index > 0 {
+                output.push_str(", ");
+            }
+            output.push_str(&format!("\"{}\"", escape_json(cover)));
+        }
+        output.push_str("],\n");
+        output.push_str("      \"files\": {\n");
+        for (file_index, (file, hash)) in doc_snapshot.files.iter().enumerate() {
+            output.push_str(&format!(
+                "        \"{}\": \"{}\"",
+                escape_json_path(file),
+                escape_json(hash)
+            ));
+            if file_index + 1 < doc_snapshot.files.len() {
+                output.push(',');
+            }
+            output.push('\n');
+        }
+        output.push_str("      }\n");
+        output.push_str("    }");
+        if index + 1 < snapshot.docs.len() {
+            output.push(',');
+        }
+        output.push('\n');
+    }
+    output.push_str("  }\n");
+    output.push_str("}\n");
+    Ok(output)
+}
+
+fn parse_snapshot(content: &str) -> Result<Snapshot> {
+    let commit = parse_json_string_field(content, "commit").unwrap_or_default();
+    let mut docs = BTreeMap::new();
+    let docs_body = json_object_body(content, "docs").context("snapshot is missing docs object")?;
+    let mut cursor = 0;
+
+    while let Some((doc, body, next_cursor)) = next_named_object(docs_body, cursor) {
+        let covers = parse_json_string_array(body, "covers");
+        let files_body = json_object_body(body, "files").unwrap_or("");
+        let files = parse_json_string_map(files_body);
+        docs.insert(PathBuf::from(doc), DocSnapshot { covers, files });
+        cursor = next_cursor;
+    }
+
+    Ok(Snapshot { commit, docs })
+}
+
+fn parse_json_string_field(content: &str, key: &str) -> Option<String> {
+    let marker = format!("\"{key}\": \"");
+    let start = content.find(&marker)? + marker.len();
+    let end = content[start..].find('"')? + start;
+    Some(unescape_json(&content[start..end]))
+}
+
+fn parse_json_string_array(content: &str, key: &str) -> Vec<String> {
+    let marker = format!("\"{key}\": [");
+    let Some(start) = content.find(&marker).map(|index| index + marker.len()) else {
+        return Vec::new();
+    };
+    let Some(end) = content[start..].find(']').map(|index| index + start) else {
+        return Vec::new();
+    };
+    content[start..end]
+        .split(',')
+        .filter_map(|part| {
+            let trimmed = part.trim();
+            trimmed
+                .strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+                .map(unescape_json)
+        })
+        .collect()
+}
+
+fn parse_json_string_map(content: &str) -> BTreeMap<PathBuf, String> {
+    let mut map = BTreeMap::new();
+    for line in content.lines() {
+        let trimmed = line.trim().trim_end_matches(',');
+        if !trimmed.starts_with('"') {
+            continue;
+        }
+        let Some(split) = trimmed.find("\": \"") else {
+            continue;
+        };
+        let key = &trimmed[1..split];
+        let value_start = split + "\": \"".len();
+        let Some(value) = trimmed[value_start..].strip_suffix('"') else {
+            continue;
+        };
+        map.insert(PathBuf::from(unescape_json(key)), unescape_json(value));
+    }
+    map
+}
+
+fn json_object_body<'a>(content: &'a str, key: &str) -> Option<&'a str> {
+    let marker = format!("\"{key}\": {{");
+    let start = content.find(&marker)? + marker.len() - 1;
+    let end = matching_brace(content, start)?;
+    Some(&content[start + 1..end])
+}
+
+fn next_named_object(content: &str, start: usize) -> Option<(String, &str, usize)> {
+    let mut cursor = content[start..].find('"')? + start;
+    let key_start = cursor + 1;
+    let key_end = content[key_start..].find('"')? + key_start;
+    let key = unescape_json(&content[key_start..key_end]);
+    cursor = key_end + 1;
+    let object_start = content[cursor..].find('{')? + cursor;
+    let object_end = matching_brace(content, object_start)?;
+    Some((key, &content[object_start + 1..object_end], object_end + 1))
+}
+
+fn matching_brace(content: &str, start: usize) -> Option<usize> {
+    let bytes = content.as_bytes();
+    let mut depth = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, byte) in bytes[start..].iter().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if *byte == b'\\' {
+                escaped = true;
+            } else if *byte == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if *byte == b'"' {
+            in_string = true;
+        } else if *byte == b'{' {
+            depth += 1;
+        } else if *byte == b'}' {
+            depth -= 1;
+            if depth == 0 {
+                return Some(start + offset);
+            }
+        }
+    }
+    None
+}
+
+fn escape_json_path(path: &Path) -> String {
+    escape_json(&path.to_string_lossy().replace('\\', "/"))
+}
+
+fn escape_json(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn unescape_json(value: &str) -> String {
+    value.replace("\\\"", "\"").replace("\\\\", "\\")
 }
 
 fn collect_code_files(workspace: &Path, docs_dir: &Path) -> Result<BTreeSet<PathBuf>> {
@@ -601,7 +736,7 @@ fn should_skip_dir(path: &Path) -> bool {
         .is_some_and(|name| {
             matches!(
                 name,
-                ".git" | "target" | "node_modules" | "__pycache__" | ".venv" | "dist"
+                ".git" | ".codocia" | "target" | "node_modules" | "__pycache__" | ".venv" | "dist"
             )
         })
 }
@@ -637,18 +772,27 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_replaces_existing_codocia_block() {
-        let content = "---\ntitle: Runtime\ncovers:\n  - crates/runtime/**\ncodocia:\n  commit: old\n  files:\n    crates/runtime/src/lib.rs: old\n---\n\n# Runtime\n";
-        let files = vec![FileSnapshot {
-            path: PathBuf::from("crates/runtime/src/lib.rs"),
-            hash: "new".to_string(),
-        }];
+    fn snapshot_json_round_trips() {
+        let mut docs = BTreeMap::new();
+        docs.insert(
+            PathBuf::from("docs/runtime.md"),
+            DocSnapshot {
+                covers: vec!["crates/runtime/**".to_string()],
+                files: BTreeMap::from([(
+                    PathBuf::from("crates/runtime/src/lib.rs"),
+                    "abc".to_string(),
+                )]),
+            },
+        );
+        let snapshot = Snapshot {
+            commit: "abc123".to_string(),
+            docs,
+        };
 
-        let output = write_snapshot(content, &files, "abc123").unwrap();
+        let rendered = render_snapshot(&snapshot).unwrap();
+        let parsed = parse_snapshot(&rendered).unwrap();
 
-        assert!(output.contains("commit: abc123"));
-        assert!(output.contains("crates/runtime/src/lib.rs: new"));
-        assert!(!output.contains("commit: old"));
+        assert_eq!(parsed, snapshot);
     }
 
     #[test]
