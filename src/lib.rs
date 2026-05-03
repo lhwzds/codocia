@@ -7,6 +7,50 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const DIFF_LINE_LIMIT: usize = 80;
+const DEFAULT_CODOCIA_POLICY: &str = r#"# Codocia Documentation Policy
+
+Use this file to guide AI coding agents that update Markdown docs in this
+repository. Codocia does not parse this file as machine config; agents read it
+before editing docs.
+
+## Defaults
+
+- density: `standard`
+- docs root: `docs/`
+- source of truth: Markdown docs
+- code defaults live in the CLI and library, not in a TOML file.
+
+## Density
+
+- `compact`: behavior delta only. Use for formatting-only, comment-only,
+  test-only, or very small internal changes.
+- `standard`: purpose, workflow, commands or APIs, examples, constraints,
+  failure modes, and validation.
+- `dense`: public contracts, invariants, edge cases, schemas, operational
+  checks, compatibility notes, and maintenance rules.
+
+## Metrics
+
+- behavior coverage: the page explains behavior that users or agents can
+  observe.
+- operational completeness: the page includes commands, expected output,
+  validation, and recovery steps when relevant.
+- contract precision: the page defines inputs, outputs, config, schemas, APIs,
+  or CLI flags exactly when they are part of the documented surface.
+- maintenance context: the page records ownership, invariants, boundaries, and
+  when prose should not change.
+- agent usability: a coding agent can follow the page without guessing the next
+  inspection, edit, command, or evidence to report.
+
+## Page Defaults
+
+- CLI and workflow pages: `standard`, prioritize operational completeness and
+  agent usability.
+- API, config, and schema pages: `dense`, prioritize contract precision.
+- Architecture and maintenance pages: `dense`, prioritize maintenance context.
+- Review notes and small behavior updates: `compact`, prioritize behavior
+  coverage.
+"#;
 
 #[derive(Debug, Clone)]
 pub struct SnapshotConfig {
@@ -52,12 +96,9 @@ pub fn init(path: impl AsRef<Path>) -> Result<()> {
     let root = path.as_ref();
     fs::create_dir_all(root.join("docs"))?;
 
-    let config_path = root.join("codocia.toml");
-    if !config_path.exists() {
-        fs::write(
-            &config_path,
-            "[docs]\nroot = \"docs\"\n\n[check]\nbase = \"main\"\n",
-        )?;
+    let policy_path = root.join("codocia.md");
+    if !policy_path.exists() {
+        fs::write(policy_path, DEFAULT_CODOCIA_POLICY)?;
     }
 
     let index_path = root.join("docs/index.md");
@@ -1022,6 +1063,30 @@ mod tests {
                 path.display()
             );
         }
+    }
+
+    #[test]
+    fn init_creates_policy_file_without_overwriting_existing_content() {
+        let root = temp_dir("init-policy");
+
+        init(&root).unwrap();
+
+        assert!(!root.join("codocia.toml").exists());
+        let policy_path = root.join("codocia.md");
+        let policy = fs::read_to_string(&policy_path).unwrap();
+        assert!(policy.contains("# Codocia Documentation Policy"));
+        assert!(policy.contains("## Metrics"));
+        assert!(policy.contains("agent usability"));
+
+        fs::write(&policy_path, "# Custom Policy\n").unwrap();
+        init(&root).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&policy_path).unwrap(),
+            "# Custom Policy\n"
+        );
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

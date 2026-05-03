@@ -10,6 +10,22 @@ The Codocia library owns the documentation drift model. It treats Markdown files
 as the documentation source of truth and uses frontmatter to bind pages to code
 files.
 
+## Init
+
+`init` creates the default Codocia workspace without overwriting existing
+files. It ensures `docs/` exists, then creates these files when missing:
+
+- `codocia.md` for agent-readable documentation policy;
+- `docs/index.md` as the initial Markdown docs page.
+
+The generated `codocia.md` template defines the repository's default
+documentation density, quality metrics, and page defaults. Codocia does not
+parse that file as machine config; coding agents read it before updating
+Markdown docs.
+
+Runtime defaults such as the docs root and check base are kept in the CLI and
+library code, not in a TOML file.
+
 ## Snapshot
 
 `snapshot` scans `docs/**/*.md` and processes pages with `covers` metadata. Each

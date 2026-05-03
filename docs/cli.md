@@ -22,8 +22,13 @@ and delegates behavior to the library API.
 
 ## Commands
 
-`init` creates the local documentation workspace. It writes `codocia.toml` and
-`docs/index.md` only when those files do not already exist.
+`init` creates the local documentation workspace. It writes `codocia.md` and
+`docs/index.md` only when those files do not already exist. The runtime defaults
+stay in the CLI and library, not in a TOML file.
+
+`codocia.md` is agent-readable documentation policy: default density, quality
+metrics, page defaults, and repository-specific rules for how Markdown should be
+updated.
 
 `skill` prints the repository `SKILL.md` to stdout. Running `codocia` without a
 subcommand does the same thing. The CLI does not create a local skill folder.

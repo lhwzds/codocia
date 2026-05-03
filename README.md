@@ -44,10 +44,11 @@ Record the current code snapshot:
 codocia snapshot
 ```
 
-Commit the docs and code:
+Review the generated repository policy in `codocia.md`, then commit the docs
+and Codocia changes:
 
 ```bash
-git add docs codocia.toml
+git add codocia.md docs
 git commit -m "docs: add runtime coverage"
 ```
 
@@ -103,7 +104,12 @@ include diff excerpts for files that need documentation review.
 codocia init
 ```
 
-Creates `codocia.toml` and `docs/index.md` if they do not exist.
+Creates `codocia.md` and `docs/index.md` if they do not exist. Existing files
+are not overwritten.
+
+`codocia.md` is an agent-readable documentation policy with the repository's
+default density, metrics, and page defaults. The code keeps the runtime
+defaults in the CLI and library.
 
 ```bash
 codocia
@@ -164,14 +170,16 @@ If you are an AI agent maintaining docs for a repository using Codocia, follow
 this loop:
 
 1. Run `codocia check --base main`.
-2. For every stale doc, read the stale docs page and the `git diff review`
+2. Read `codocia.md` when present so you know the repository's density,
+   metrics, and page defaults.
+3. For every stale doc, read the stale docs page and the `git diff review`
    excerpts for the changed files it covers.
-3. Update the Markdown body only when the diff changes documented behavior.
-4. If a changed source file is uncovered, either add it to an existing page's
+4. Update the Markdown body only when the diff changes documented behavior.
+5. If a changed source file is uncovered, either add it to an existing page's
    `covers` list or create a new docs page.
-5. Run `codocia snapshot`.
-6. Run `codocia check --base main` again.
-7. Do not edit generated site output. Only edit docs source files.
+6. Run `codocia snapshot`.
+7. Run `codocia check --base main` again.
+8. Do not edit generated site output. Only edit docs source files.
 
 Important rules:
 
