@@ -1,5 +1,7 @@
 # Codocia
 
+Keep docs true as code changes.
+
 Codocia keeps fast-moving code and Markdown documentation synchronized.
 
 The problem: code changes quickly, but docs usually lag behind. Codocia makes
