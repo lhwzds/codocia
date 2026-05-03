@@ -1,12 +1,20 @@
 ---
 title: Codocia Documentation
+description: A docs-maintenance skill and drift checker for AI coding agents.
 ---
 
 # Codocia Documentation
 
-Codocia is a documentation drift checker for repositories where code changes
-faster than docs. Markdown files remain the source of truth, while Codocia
-records which source files each page covers.
+Codocia is a docs-maintenance skill and documentation drift checker for AI
+coding agents such as Codex, Claude Code, OpenCode, and similar terminal agent
+tools. Markdown files remain the source of truth, while Codocia records which
+source files each page covers and gives agents a repeatable loop for generating
+or updating docs from code changes.
+
+The goal is not to replace human-readable Markdown with generated source
+comments. The goal is to guide a coding agent through the docs work: inspect the
+git diff, find stale or uncovered docs, update the Markdown body when behavior
+changed, and refresh the snapshot only after review.
 
 ## Start Here
 

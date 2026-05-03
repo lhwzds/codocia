@@ -2,10 +2,14 @@
 
 Keep docs true as code changes.
 
-Codocia keeps fast-moving code and Markdown documentation synchronized.
+Codocia is a docs-maintenance skill and documentation drift checker for AI
+coding agents such as Codex, Claude Code, OpenCode, and similar terminal agent
+tools.
 
 The problem: code changes quickly, but docs usually lag behind. Codocia makes
-that drift visible by binding Markdown pages to the code files they explain.
+that drift visible by binding Markdown pages to the code files they explain and
+giving coding agents a repeatable loop for generating or updating docs from code
+changes.
 
 Codocia does not generate prose from source comments. The `docs/` directory is
 the source of truth. Codocia records which files each page covers, snapshots
