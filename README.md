@@ -147,8 +147,10 @@ A source file changed in git diff, but no docs page covers it.
 
 `uncovered code files`
 
-A Rust or Python source file exists in the workspace, but no docs page covers
-it.
+A source file exists in the workspace, but no docs page covers it. Codocia
+recognizes common implementation extensions, including Rust, Python,
+JavaScript, TypeScript, TSX/JSX, Vue, Svelte, Go, Java, Kotlin, Swift, C/C++,
+C#, Ruby, PHP, shell, Lua, R, and SQL.
 
 ## AI Agent Workflow
 
@@ -200,7 +202,7 @@ jobs:
 
 - Markdown frontmatter declares `covers`.
 - `docs/.codocia-snapshot.json` stores expanded file hashes.
-- Rust and Python files are treated as code files.
+- Common source extensions are treated as code files for uncovered-file checks.
 - File freshness uses deterministic content hashes.
 - Git diff is used only when `--base` is provided.
 - No AI calls, HTML generation, llms output, or source-comment extraction in the

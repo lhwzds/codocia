@@ -1,5 +1,5 @@
 {
-  "commit": "502156b622345c7efe37284d18ec7a4d43c4fa5b",
+  "commit": "4e1080aaa0d95b57333847b92f832dede2b34df0",
   "docs": {
     "docs/cli.md": {
       "covers": ["src/main.rs"],
@@ -10,7 +10,7 @@
     "docs/library.md": {
       "covers": ["src/lib.rs"],
       "files": {
-        "src/lib.rs": "18126e2101dafdfe"
+        "src/lib.rs": "6f213fad4d7214d3"
       }
     }
   }

@@ -26,8 +26,8 @@ update prose first, then refresh metadata.
 - cover patterns that match no files;
 - docs whose recorded file hashes differ from current file content;
 - snapshot entries for files that no longer exist;
-- changed Rust or Python files with no docs coverage when `--base` is provided;
-- Rust or Python files in the workspace that are not covered by any docs page.
+- changed source files with no docs coverage when `--base` is provided;
+- source files in the workspace that are not covered by any docs page.
 
 For stale or uncovered changed files, the report includes a `git diff review`
 section. The library renders committed, staged, and unstaged diff excerpts for
@@ -54,3 +54,13 @@ changes.
 The MVP includes a small built-in glob matcher for `*`, `?`, and `**` patterns.
 File freshness uses a deterministic content hash. The commit hash is stored as
 audit metadata, but staleness is based on file content.
+
+Codocia treats common source extensions as code for uncovered-file checks,
+including Rust, Python, JavaScript, TypeScript, TSX/JSX, Vue, Svelte, Go, Java,
+Kotlin, Swift, C/C++, C#, Ruby, PHP, shell, Lua, R, and SQL. `covers` patterns
+can still match any file type; this source-extension list only controls the
+automatic "uncovered code files" report.
+
+Generated and dependency directories are skipped while scanning, including
+`target`, `node_modules`, `dist`, `.astro`, `.next`, `.nuxt`, `.svelte-kit`,
+`coverage`, Playwright reports, and test result output.

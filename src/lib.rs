@@ -877,11 +877,20 @@ fn is_top_level_key(line: &str) -> bool {
     !line.starts_with(' ') && line.trim_end().ends_with(':')
 }
 
+const CODE_FILE_EXTENSIONS: &[&str] = &[
+    "bash", "c", "cc", "cjs", "cpp", "cs", "cts", "cxx", "fish", "go", "h", "hh", "hpp", "java",
+    "js", "jsx", "kt", "kts", "lua", "mjs", "mts", "php", "py", "pyi", "r", "rb", "rs", "sh",
+    "sql", "svelte", "swift", "ts", "tsx", "vue", "zsh",
+];
+
 fn is_code_file(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(|value| value.to_str()),
-        Some("rs" | "py")
-    )
+    path.extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| {
+            CODE_FILE_EXTENSIONS
+                .iter()
+                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+        })
 }
 
 fn should_skip_dir(path: &Path) -> bool {
@@ -890,7 +899,21 @@ fn should_skip_dir(path: &Path) -> bool {
         .is_some_and(|name| {
             matches!(
                 name,
-                ".git" | ".codocia" | "target" | "node_modules" | "__pycache__" | ".venv" | "dist"
+                ".git"
+                    | ".codocia"
+                    | "target"
+                    | "node_modules"
+                    | "__pycache__"
+                    | ".venv"
+                    | "dist"
+                    | ".astro"
+                    | ".next"
+                    | ".nuxt"
+                    | ".svelte-kit"
+                    | "build"
+                    | "coverage"
+                    | "playwright-report"
+                    | "test-results"
             )
         })
 }
@@ -963,6 +986,42 @@ mod tests {
             "crates/skill/**",
             Path::new("crates/runtime/src/lib.rs")
         ));
+    }
+
+    #[test]
+    fn recognizes_common_source_file_extensions() {
+        for path in [
+            "src/lib.rs",
+            "python/skrun/runtime.py",
+            "apps/web/src/App.tsx",
+            "packages/core/src/index.ts",
+            "site/vite.config.js",
+            "components/Button.vue",
+            "scripts/dev.sh",
+        ] {
+            assert!(is_code_file(Path::new(path)), "{path} should be code");
+        }
+
+        for path in ["README.md", "package.json", "docs/index.md"] {
+            assert!(!is_code_file(Path::new(path)), "{path} should not be code");
+        }
+    }
+
+    #[test]
+    fn skips_common_generated_directories() {
+        for path in [
+            Path::new(".astro"),
+            Path::new("website/.astro"),
+            Path::new("coverage"),
+            Path::new("playwright-report"),
+            Path::new("test-results"),
+        ] {
+            assert!(
+                should_skip_dir(path),
+                "{} should be skipped",
+                path.display()
+            );
+        }
     }
 
     #[test]
