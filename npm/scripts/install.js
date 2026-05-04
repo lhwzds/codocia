@@ -146,22 +146,27 @@ async function main() {
   const binDir = path.join(__dirname, "..", "bin");
 
   fs.mkdirSync(binDir, { recursive: true });
+  const extractDir = fs.mkdtempSync(path.join(binDir, "extract-"));
 
-  console.log(`Downloading codocia for ${target}...`);
-  const archive = await download(url);
-  await verifyChecksum(archive, archiveName);
+  try {
+    console.log(`Downloading codocia for ${target}...`);
+    const archive = await download(url);
+    await verifyChecksum(archive, archiveName);
 
-  if (process.platform === "win32") {
-    extractZip(archive, binDir);
-    fs.renameSync(path.join(binDir, "codocia.exe"), path.join(binDir, "codocia-bin.exe"));
-  } else {
-    extractTarGz(archive, binDir);
-    const binaryPath = path.join(binDir, "codocia-bin");
-    fs.renameSync(path.join(binDir, "codocia"), binaryPath);
-    fs.chmodSync(binaryPath, 0o755);
+    if (process.platform === "win32") {
+      extractZip(archive, extractDir);
+      fs.copyFileSync(path.join(extractDir, "codocia.exe"), path.join(binDir, "codocia-bin.exe"));
+    } else {
+      extractTarGz(archive, extractDir);
+      const binaryPath = path.join(binDir, "codocia-bin");
+      fs.copyFileSync(path.join(extractDir, "codocia"), binaryPath);
+      fs.chmodSync(binaryPath, 0o755);
+    }
+
+    console.log("codocia installed successfully.");
+  } finally {
+    fs.rmSync(extractDir, { recursive: true, force: true });
   }
-
-  console.log("codocia installed successfully.");
 }
 
 if (require.main === module) {

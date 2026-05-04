@@ -1,5 +1,5 @@
 {
-  "commit": "a66f22d86f66c1fabb12270b7d26976cdd81b31b",
+  "commit": "59a0072e9ba4c3b96ec5ddd0657c21c49c160185",
   "docs": {
     "docs/cli.md": {
       "covers": ["src/main.rs"],
@@ -16,9 +16,9 @@
     "docs/distribution.md": {
       "covers": ["npm/scripts/install.js", "npm/scripts/install.test.js", "homebrew-tap-template/Formula/codocia.rb"],
       "files": {
-        "homebrew-tap-template/Formula/codocia.rb": "64072585ba53ec27",
-        "npm/scripts/install.js": "42302fb90875296b",
-        "npm/scripts/install.test.js": "496fd3dd6b3f4bca"
+        "homebrew-tap-template/Formula/codocia.rb": "fa46d16f5c776432",
+        "npm/scripts/install.js": "48704294a012bfd9",
+        "npm/scripts/install.test.js": "695e7d83cb4cb777"
       }
     },
     "docs/library.md": {

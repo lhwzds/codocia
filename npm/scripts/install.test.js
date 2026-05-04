@@ -21,7 +21,7 @@ assert.strictEqual(getArchiveName("x86_64-apple-darwin", "darwin"), "codocia-x86
 assert.strictEqual(getArchiveName("x86_64-pc-windows-msvc", "win32"), "codocia-x86_64-pc-windows-msvc.zip");
 assert.strictEqual(
   getDownloadUrl("codocia-x86_64-unknown-linux-gnu.tar.gz"),
-  "https://github.com/lhwzds/codocia/releases/download/v0.1.1/codocia-x86_64-unknown-linux-gnu.tar.gz",
+  "https://github.com/lhwzds/codocia/releases/download/v0.1.2/codocia-x86_64-unknown-linux-gnu.tar.gz",
 );
 
 const checksums = parseChecksums(`
