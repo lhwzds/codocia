@@ -21,6 +21,8 @@ changed, and refresh the snapshot only after review.
 - [CLI Workflow](./cli.md): explains the command-line entrypoint and user flow.
 - [Configuration](./configuration.md): explains `codocia.md`, code defaults,
   density tiers, and documentation quality metrics.
+- [Distribution](./distribution.md): explains GitHub Release assets, npm, and
+  Homebrew installation channels.
 - [Library Implementation](./library.md): explains the Rust library that powers
   coverage, snapshot, and staleness checks.
 

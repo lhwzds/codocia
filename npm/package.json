@@ -1,0 +1,47 @@
+{
+  "name": "codocia",
+  "version": "0.1.1",
+  "description": "Documentation drift checker for AI coding agents.",
+  "keywords": [
+    "docs",
+    "markdown",
+    "drift",
+    "documentation",
+    "agent",
+    "cli"
+  ],
+  "author": "Huaiwu Li",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lhwzds/codocia.git"
+  },
+  "homepage": "https://github.com/lhwzds/codocia",
+  "bugs": {
+    "url": "https://github.com/lhwzds/codocia/issues"
+  },
+  "bin": {
+    "codocia": "bin/codocia"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "test": "node scripts/install.test.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "files": [
+    "bin/codocia",
+    "scripts",
+    "README.md"
+  ]
+}

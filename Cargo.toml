@@ -1,6 +1,6 @@
 [package]
 name = "codocia"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "Detect documentation drift between Markdown docs and fast-moving code."
@@ -9,7 +9,7 @@ documentation = "https://docs.rs/codocia"
 readme = "README.md"
 keywords = ["docs", "markdown", "drift", "documentation"]
 categories = ["development-tools", "command-line-utilities"]
-exclude = ["PLAN.md"]
+exclude = ["PLAN.md", ".github", "homebrew-tap-template", "npm"]
 
 [[bin]]
 name = "codocia"

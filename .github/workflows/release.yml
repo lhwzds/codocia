@@ -1,0 +1,241 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          MAIN_SHA="$(git rev-parse origin/main)"
+
+          if [ "$RELEASE_SHA" != "$MAIN_SHA" ]; then
+            echo "::error::Release tags must point at the latest origin/main commit."
+            echo "::error::Release SHA: $RELEASE_SHA"
+            echo "::error::origin/main SHA: $MAIN_SHA"
+            exit 1
+          fi
+
+          TEST_RUN="$(gh run list \
+            --workflow Tests \
+            --branch main \
+            --commit "$RELEASE_SHA" \
+            --event push \
+            --limit 1 \
+            --json status,conclusion,url \
+            --jq 'if length == 0 then "" else .[0] | [.status, .conclusion, .url] | @tsv end')"
+
+          if [ -z "$TEST_RUN" ]; then
+            echo "::error::No Tests workflow run found for $RELEASE_SHA on main."
+            exit 1
+          fi
+
+          IFS=$'\t' read -r TEST_STATUS TEST_CONCLUSION TEST_URL <<< "$TEST_RUN"
+
+          if [ "$TEST_STATUS" != "completed" ] || [ "$TEST_CONCLUSION" != "success" ]; then
+            echo "::error::Release requires a completed successful Tests workflow on main."
+            echo "::error::Tests status: $TEST_STATUS"
+            echo "::error::Tests conclusion: $TEST_CONCLUSION"
+            echo "::error::Tests URL: $TEST_URL"
+            exit 1
+          fi
+
+      - name: Verify tag version
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          CARGO_VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          NPM_VERSION="$(node -p "require('./npm/package.json').version")"
+
+          if [ "$VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag version $VERSION does not match Cargo.toml version $CARGO_VERSION."
+            exit 1
+          fi
+
+          if [ "$VERSION" != "$NPM_VERSION" ]; then
+            echo "::error::Tag version $VERSION does not match npm/package.json version $NPM_VERSION."
+            exit 1
+          fi
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Run release checks
+        run: |
+          cargo fmt --check
+          cargo test
+          cargo publish --dry-run
+          npm test --prefix npm
+          cd npm
+          npm publish --dry-run --access public
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: preflight
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package Unix
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czvf codocia-${{ matrix.target }}.tar.gz codocia
+          mv codocia-${{ matrix.target }}.tar.gz ../../../
+
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a codocia-${{ matrix.target }}.zip codocia.exe
+          mv codocia-${{ matrix.target }}.zip ../../../
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codocia-${{ matrix.target }}
+          path: codocia-${{ matrix.target }}.*
+
+  github-release:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} . \;
+          sha256sum *.tar.gz *.zip > checksums.txt
+          cat checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.zip
+            artifacts/checksums.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-crate:
+    name: Publish crate
+    needs: github-release
+    runs-on: ubuntu-latest
+    if: ${{ vars.PUBLISH_CRATES == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
+
+  publish-npm:
+    name: Publish npm
+    needs: github-release
+    runs-on: ubuntu-latest
+    if: ${{ vars.PUBLISH_NPM == 'true' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Ensure npm supports provenance
+        run: |
+          npm install -g npm@11
+          npm --version
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
+        working-directory: npm
+
+  update-homebrew:
+    name: Update Homebrew formula
+    needs: github-release
+    runs-on: ubuntu-latest
+    if: ${{ vars.UPDATE_HOMEBREW == 'true' }}
+    steps:
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Trigger tap update
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: lhwzds/homebrew-tap
+          event-type: update-codocia-formula
+          client-payload: '{"name": "codocia", "version": "${{ steps.version.outputs.VERSION }}"}'
