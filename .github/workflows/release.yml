@@ -182,7 +182,6 @@ jobs:
     name: Publish crate
     needs: github-release
     runs-on: ubuntu-latest
-    if: ${{ vars.PUBLISH_CRATES == 'true' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -198,7 +197,6 @@ jobs:
     name: Publish npm
     needs: github-release
     runs-on: ubuntu-latest
-    if: ${{ vars.PUBLISH_NPM == 'true' }}
     permissions:
       contents: read
       id-token: write
@@ -224,7 +222,6 @@ jobs:
     name: Update Homebrew formula
     needs: github-release
     runs-on: ubuntu-latest
-    if: ${{ vars.UPDATE_HOMEBREW == 'true' }}
     steps:
       - name: Extract version
         id: version
