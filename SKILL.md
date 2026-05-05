@@ -71,22 +71,41 @@ density tier. `codocia.md` can prioritize or specialize them per repository.
 
 Markdown docs can be used directly as Starlight pages.
 
-Website builds should:
+`docs/` remains the source of truth. The generated Starlight site is disposable
+output and can be deleted and regenerated.
 
-1. Fetch the product repository from GitHub at a configured ref.
-2. Copy `docs/**/*.md` into `sites/<product>/src/content/docs/`.
-3. Copy the same Markdown files into `sites/<product>/public/md/` for raw AI access.
-4. Generate `sites/<product>/public/llms.txt`.
-5. Generate `sites/<product>/public/llms-full.txt`.
-6. Run the Starlight build.
+Use these commands:
 
-The website repository should keep templates, scripts, and deployment config.
-It should not commit copied product docs as source of truth.
+- `codocia site generate`: generate the Starlight project only.
+- `codocia site build`: generate the site, install npm dependencies when
+  `node_modules` is missing, then run the Starlight build.
+- `codocia site serve`: generate the site, install npm dependencies when
+  `node_modules` is missing, then start the Astro dev server.
+- `codocia serve --plain`: serve source Markdown with a small built-in HTTP
+  server when Node/npm is not available. This is not Starlight.
+
+The generated Starlight project should contain:
+
+- `src/content/docs/`: Starlight-ready Markdown copies.
+- `public/md/`: raw Markdown copies for direct AI access.
+- `public/llms.txt`: Markdown docs index.
+- `public/llms-full.txt`: concatenated Markdown bundle.
+- `package.json`, `astro.config.mjs`, `src/content.config.ts`, and
+  `tsconfig.json`: local Starlight runtime files.
+
+When generating Starlight copies, Codocia may sanitize frontmatter so Starlight
+can parse it. It preserves `title` and valid `covers` metadata in the generated
+copy, but it does not rewrite the source Markdown in `docs/`. Raw source
+Markdown remains available under `public/md/`.
 
 ## Validation
 
 - Run `codocia check --base main` before committing docs.
-- Run the website build after changing fetch/sync logic.
+- Run `codocia site build` after changing site generation logic.
+- Run `codocia site serve` and request the local URL when changing dev-server
+  behavior.
+- Run `codocia serve --plain` and request the local URL when changing the
+  no-Node fallback server.
 - If the diff is formatting-only, comment-only, test-only, or internal-only,
   keep prose unchanged and refresh the snapshot after review.
 - A passing snapshot check means file hashes are current; it does not prove the

@@ -3,8 +3,10 @@
 use anyhow::{Context, Result, bail};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 const DIFF_LINE_LIMIT: usize = 80;
 const DEFAULT_CODOCIA_POLICY: &str = r#"# Codocia Documentation Policy
@@ -63,6 +65,36 @@ pub struct CheckConfig {
     pub workspace: PathBuf,
     pub docs: PathBuf,
     pub base: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SiteConfig {
+    pub workspace: PathBuf,
+    pub docs: PathBuf,
+    pub output: PathBuf,
+    pub title: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SiteBuildConfig {
+    pub site: SiteConfig,
+    pub skip_install: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SiteServeConfig {
+    pub site: SiteConfig,
+    pub host: String,
+    pub port: u16,
+    pub skip_install: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlainServeConfig {
+    pub workspace: PathBuf,
+    pub docs: PathBuf,
+    pub host: String,
+    pub port: u16,
 }
 
 pub fn skill_prompt() -> &'static str {
@@ -319,6 +351,169 @@ pub fn check(config: &CheckConfig) -> Result<()> {
     );
 
     bail!(message);
+}
+
+pub fn generate_starlight_site(config: &SiteConfig) -> Result<PathBuf> {
+    let workspace = normalize_dir(&config.workspace)?;
+    let docs_dir = resolve_path(&workspace, &config.docs);
+    if !docs_dir.is_dir() {
+        bail!("docs directory does not exist: {}", docs_dir.display());
+    }
+
+    let output = resolve_path(&workspace, &config.output);
+    let output = if output.exists() {
+        normalize_dir(&output)?
+    } else {
+        output
+    };
+    if output == workspace {
+        bail!("site output must not be the workspace root");
+    }
+    if same_path_if_exists(&output, &docs_dir)? {
+        bail!("site output must not be the docs directory");
+    }
+
+    let site_docs_dir = output.join("src/content/docs");
+    let raw_docs_dir = output.join("public/md");
+    if site_docs_dir.exists() {
+        fs::remove_dir_all(&site_docs_dir)
+            .with_context(|| format!("remove {}", site_docs_dir.display()))?;
+    }
+    if raw_docs_dir.exists() {
+        fs::remove_dir_all(&raw_docs_dir)
+            .with_context(|| format!("remove {}", raw_docs_dir.display()))?;
+    }
+
+    fs::create_dir_all(&site_docs_dir)
+        .with_context(|| format!("create {}", site_docs_dir.display()))?;
+    fs::create_dir_all(&raw_docs_dir)
+        .with_context(|| format!("create {}", raw_docs_dir.display()))?;
+    fs::create_dir_all(output.join("src"))
+        .with_context(|| format!("create {}", output.join("src").display()))?;
+    fs::create_dir_all(output.join("public"))
+        .with_context(|| format!("create {}", output.join("public").display()))?;
+
+    let mut markdown_files = Vec::new();
+    collect_markdown_files(&docs_dir, &mut markdown_files)?;
+    markdown_files.sort();
+    if markdown_files.is_empty() {
+        bail!(
+            "docs directory contains no Markdown files: {}",
+            docs_dir.display()
+        );
+    }
+
+    let mut copied_docs = Vec::new();
+    for source in markdown_files {
+        let relative = relative_path(&docs_dir, &source);
+        let content = fs::read_to_string(&source)
+            .with_context(|| format!("failed to read {}", source.display()))?;
+        let site_content = ensure_starlight_title(&content, &relative);
+        write_file(site_docs_dir.join(&relative), site_content.as_bytes())?;
+        write_file(raw_docs_dir.join(&relative), content.as_bytes())?;
+        copied_docs.push(relative);
+    }
+
+    write_file(
+        output.join("package.json"),
+        render_site_package_json(&config.title).as_bytes(),
+    )?;
+    write_file(
+        output.join("astro.config.mjs"),
+        render_astro_config(&config.title).as_bytes(),
+    )?;
+    write_file(output.join("tsconfig.json"), SITE_TSCONFIG.as_bytes())?;
+    write_file(
+        output.join("src/content.config.ts"),
+        SITE_CONTENT_CONFIG.as_bytes(),
+    )?;
+    write_file(output.join("README.md"), render_site_readme().as_bytes())?;
+    write_file(
+        output.join("public/llms.txt"),
+        render_llms_index(&config.title, &copied_docs).as_bytes(),
+    )?;
+    write_file(
+        output.join("public/llms-full.txt"),
+        render_llms_full(&config.title, &docs_dir, &copied_docs).as_bytes(),
+    )?;
+
+    println!(
+        "generated Starlight docs site at {} from {} Markdown page(s)",
+        output.display(),
+        copied_docs.len()
+    );
+    println!("next steps:");
+    println!("- cd {}", output.display());
+    println!("- npm install");
+    println!("- npm run dev");
+
+    Ok(output)
+}
+
+pub fn starlight_build(config: &SiteBuildConfig) -> Result<()> {
+    let output = generate_starlight_site(&config.site)?;
+    ensure_npm_available()?;
+    if !config.skip_install {
+        npm_install_if_needed(&output)?;
+    }
+    run_status_command(
+        Command::new("npm")
+            .arg("run")
+            .arg("build")
+            .current_dir(&output),
+        "npm run build",
+    )?;
+    Ok(())
+}
+
+pub fn serve_starlight_site(config: &SiteServeConfig) -> Result<()> {
+    let output = generate_starlight_site(&config.site)?;
+    ensure_npm_available()?;
+    if !config.skip_install {
+        npm_install_if_needed(&output)?;
+    }
+    println!(
+        "serving Starlight docs at http://{}:{}/",
+        config.host, config.port
+    );
+    let status = Command::new("npm")
+        .arg("run")
+        .arg("dev")
+        .arg("--")
+        .arg("--host")
+        .arg(&config.host)
+        .arg("--port")
+        .arg(config.port.to_string())
+        .current_dir(&output)
+        .status()
+        .context("failed to run npm run dev")?;
+    if !status.success() {
+        bail!("npm run dev failed with status {status}");
+    }
+    Ok(())
+}
+
+pub fn serve_plain_docs(config: &PlainServeConfig) -> Result<()> {
+    let workspace = normalize_dir(&config.workspace)?;
+    let docs_dir = resolve_path(&workspace, &config.docs);
+    if !docs_dir.is_dir() {
+        bail!("docs directory does not exist: {}", docs_dir.display());
+    }
+    let address = format!("{}:{}", config.host, config.port);
+    let listener = TcpListener::bind(&address).with_context(|| format!("bind {address}"))?;
+    println!("serving plain Codocia docs at http://{address}/");
+    println!("press Ctrl-C to stop");
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                if let Err(error) = handle_plain_request(stream, &docs_dir) {
+                    eprintln!("request failed: {error:#}");
+                }
+            }
+            Err(error) => eprintln!("connection failed: {error}"),
+        }
+    }
+    Ok(())
 }
 
 fn diff_review_files(
@@ -976,6 +1171,371 @@ fn relative_path(root: &Path, path: &Path) -> PathBuf {
     path.strip_prefix(root).unwrap_or(path).to_path_buf()
 }
 
+fn ensure_npm_available() -> Result<()> {
+    let output = Command::new("npm")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context(
+            "npm is required for Starlight commands; install Node.js/npm or use `codocia serve --plain`",
+        )?;
+    if !output.success() {
+        bail!("npm is required for Starlight commands; use `codocia serve --plain` without npm");
+    }
+    Ok(())
+}
+
+fn npm_install_if_needed(site_dir: &Path) -> Result<()> {
+    if site_dir.join("node_modules").is_dir() {
+        return Ok(());
+    }
+    run_status_command(
+        Command::new("npm").arg("install").current_dir(site_dir),
+        "npm install",
+    )
+}
+
+fn run_status_command(command: &mut Command, label: &str) -> Result<()> {
+    println!("running {label}");
+    let status = command
+        .status()
+        .with_context(|| format!("failed to run {label}"))?;
+    if !status.success() {
+        bail!("{label} failed with status {status}");
+    }
+    Ok(())
+}
+
+fn handle_plain_request(mut stream: TcpStream, docs_dir: &Path) -> Result<()> {
+    let mut reader = BufReader::new(stream.try_clone()?);
+    let mut request_line = String::new();
+    reader.read_line(&mut request_line)?;
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("/")
+        .to_string();
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line)? == 0 || line == "\r\n" {
+            break;
+        }
+    }
+
+    let (status, content_type, body) = plain_response_for_path(docs_dir, &path)?;
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(response.as_bytes())?;
+    stream.write_all(body.as_bytes())?;
+    Ok(())
+}
+
+fn plain_response_for_path(
+    docs_dir: &Path,
+    request_path: &str,
+) -> Result<(&'static str, &'static str, String)> {
+    let clean_path = request_path.split('?').next().unwrap_or("/");
+    if clean_path == "/" {
+        let mut paths = Vec::new();
+        collect_markdown_files(docs_dir, &mut paths)?;
+        paths.sort();
+        return Ok(("200 OK", "text/html", render_plain_index(docs_dir, &paths)));
+    }
+    let Some(relative) = plain_doc_path(clean_path) else {
+        return Ok(("404 Not Found", "text/plain", "not found\n".to_string()));
+    };
+    let path = docs_dir.join(&relative);
+    if !path.is_file() {
+        return Ok(("404 Not Found", "text/plain", "not found\n".to_string()));
+    }
+    let content = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    if clean_path.ends_with(".md") || clean_path.starts_with("/md/") {
+        return Ok(("200 OK", "text/markdown", content));
+    }
+    Ok((
+        "200 OK",
+        "text/html",
+        render_plain_doc(&relative, strip_frontmatter(&content)),
+    ))
+}
+
+fn plain_doc_path(request_path: &str) -> Option<PathBuf> {
+    let value = request_path
+        .trim_start_matches('/')
+        .strip_prefix("md/")
+        .unwrap_or_else(|| request_path.trim_start_matches('/'));
+    if value.contains("..") || value.starts_with('/') || value.is_empty() {
+        return None;
+    }
+    let mut path = PathBuf::from(value);
+    if path.extension().is_none() {
+        path.set_extension("md");
+    }
+    Some(path)
+}
+
+fn render_plain_index(docs_dir: &Path, paths: &[PathBuf]) -> String {
+    let mut output = String::from(
+        "<!doctype html><meta charset=\"utf-8\"><title>Docs</title><main><h1>Docs</h1><ul>",
+    );
+    for path in paths {
+        let relative = relative_path(docs_dir, path);
+        let href = html_escape(
+            &relative
+                .with_extension("")
+                .to_string_lossy()
+                .replace('\\', "/"),
+        );
+        output.push_str(&format!(
+            "<li><a href=\"/{href}\">{}</a></li>",
+            html_escape(&relative.display().to_string())
+        ));
+    }
+    output.push_str("</ul></main>");
+    output
+}
+
+fn render_plain_doc(path: &Path, markdown: &str) -> String {
+    format!(
+        "<!doctype html><meta charset=\"utf-8\"><title>{}</title><main><p><a href=\"/\">Docs</a></p><pre>{}</pre></main>",
+        html_escape(&path.display().to_string()),
+        html_escape(markdown)
+    )
+}
+
+fn strip_frontmatter(content: &str) -> &str {
+    split_frontmatter(content)
+        .map(|(_, body)| body)
+        .unwrap_or(content)
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn same_path_if_exists(left: &Path, right: &Path) -> Result<bool> {
+    if !left.exists() || !right.exists() {
+        return Ok(false);
+    }
+    Ok(left.canonicalize()? == right.canonicalize()?)
+}
+
+fn write_file(path: PathBuf, content: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    fs::write(&path, content).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+fn ensure_starlight_title(content: &str, path: &Path) -> String {
+    if let Some((frontmatter, body)) = split_frontmatter(content) {
+        let title = title_from_frontmatter(frontmatter)
+            .or_else(|| title_from_markdown(body))
+            .unwrap_or_else(|| title_from_path(path));
+        return render_starlight_markdown(&title, &parse_covers(frontmatter), body);
+    }
+    let title = title_from_markdown(content).unwrap_or_else(|| title_from_path(path));
+    render_starlight_markdown(&title, &[], content)
+}
+
+fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
+    let rest = content.strip_prefix("---\n")?;
+    let end = rest.find("\n---\n")?;
+    Some((&rest[..end], &rest[end + "\n---\n".len()..]))
+}
+
+fn title_from_frontmatter(frontmatter: &str) -> Option<String> {
+    frontmatter.lines().find_map(|line| {
+        let value = line.trim_start().strip_prefix("title:")?.trim();
+        (!value.is_empty()).then(|| clean_frontmatter_scalar(value))
+    })
+}
+
+fn clean_frontmatter_scalar(value: &str) -> String {
+    value.trim_matches('"').trim_matches('\'').to_string()
+}
+
+fn render_starlight_markdown(title: &str, covers: &[String], body: &str) -> String {
+    let mut output = format!("---\ntitle: {}\n", yaml_string(title));
+    if !covers.is_empty() {
+        output.push_str("covers:\n");
+        for cover in covers {
+            output.push_str(&format!("  - {}\n", yaml_string(cover)));
+        }
+    }
+    output.push_str("---\n");
+    if !body.starts_with('\n') {
+        output.push('\n');
+    }
+    output.push_str(body);
+    output
+}
+
+fn title_from_markdown(content: &str) -> Option<String> {
+    content.lines().find_map(|line| {
+        let title = line.trim().strip_prefix("# ")?.trim();
+        (!title.is_empty()).then(|| title.to_string())
+    })
+}
+
+fn title_from_path(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Documentation")
+        .split(['-', '_'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn yaml_string(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+fn render_site_package_json(title: &str) -> String {
+    format!(
+        r#"{{
+  "name": "{}",
+  "private": true,
+  "type": "module",
+  "scripts": {{
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  }},
+  "dependencies": {{
+    "@astrojs/starlight": "^0.35.0",
+    "astro": "^5.0.0",
+    "typescript": "^5.0.0"
+  }}
+}}
+"#,
+        package_name_from_title(title)
+    )
+}
+
+fn package_name_from_title(title: &str) -> String {
+    let mut name = String::from("codocia-docs-site");
+    let suffix = title
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if !suffix.is_empty() {
+        name.push('-');
+        name.push_str(&suffix);
+    }
+    name
+}
+
+fn render_astro_config(title: &str) -> String {
+    format!(
+        r#"import {{ defineConfig }} from 'astro/config';
+import starlight from '@astrojs/starlight';
+
+export default defineConfig({{
+  integrations: [
+    starlight({{
+      title: {},
+    }}),
+  ],
+}});
+"#,
+        js_string(title)
+    )
+}
+
+fn js_string(value: &str) -> String {
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+const SITE_TSCONFIG: &str = r#"{
+  "extends": "astro/tsconfigs/strict"
+}
+"#;
+
+const SITE_CONTENT_CONFIG: &str = r#"import { defineCollection, z } from 'astro:content';
+import { docsLoader } from '@astrojs/starlight/loaders';
+import { docsSchema } from '@astrojs/starlight/schema';
+
+export const collections = {
+  docs: defineCollection({
+    loader: docsLoader(),
+    schema: docsSchema({
+      extend: z.object({
+        covers: z.array(z.string()).optional(),
+      }),
+    }),
+  }),
+};
+"#;
+
+fn render_site_readme() -> &'static str {
+    r#"# Codocia Starlight Docs Site
+
+This site is generated from repository Markdown docs.
+
+```bash
+npm install
+npm run dev
+```
+
+Source docs remain the source of truth. Regenerate the site with `codocia site`
+after changing the source docs.
+"#
+}
+
+fn render_llms_index(title: &str, docs: &[PathBuf]) -> String {
+    let mut output = format!("# {title}\n\n");
+    output.push_str("Markdown docs generated by Codocia for AI readers.\n\n");
+    for doc in docs {
+        let href = format!("/md/{}", doc.to_string_lossy().replace('\\', "/"));
+        output.push_str(&format!("- [{}]({})\n", doc.display(), href));
+    }
+    output
+}
+
+fn render_llms_full(title: &str, docs_dir: &Path, docs: &[PathBuf]) -> String {
+    let mut output = format!("# {title}\n\n");
+    for doc in docs {
+        output.push_str(&format!("## {}\n\n", doc.display()));
+        match fs::read_to_string(docs_dir.join(doc)) {
+            Ok(content) => {
+                output.push_str(content.trim());
+                output.push_str("\n\n");
+            }
+            Err(error) => {
+                output.push_str(&format!("Unable to read doc: {error}\n\n"));
+            }
+        }
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1087,6 +1647,68 @@ mod tests {
         );
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn site_generation_copies_docs_into_starlight_project() {
+        let root = temp_dir("site");
+        fs::create_dir_all(root.join("docs/guides")).unwrap();
+        fs::write(
+            root.join("docs/index.md"),
+            "---\ntitle: Home\ncovers:\n  - src/**\n---\n\n# Home\n",
+        )
+        .unwrap();
+        fs::write(root.join("docs/guides/usage.md"), "# Usage\n").unwrap();
+
+        generate_starlight_site(&SiteConfig {
+            workspace: root.clone(),
+            docs: PathBuf::from("docs"),
+            output: PathBuf::from(".codocia/starlight"),
+            title: "Example Docs".to_string(),
+        })
+        .unwrap();
+
+        let output = root.join(".codocia/starlight");
+        assert!(output.join("package.json").is_file());
+        assert!(output.join("astro.config.mjs").is_file());
+        assert!(output.join("src/content.config.ts").is_file());
+        assert!(output.join("src/content/docs/index.md").is_file());
+        assert!(output.join("src/content/docs/guides/usage.md").is_file());
+        assert!(output.join("public/md/guides/usage.md").is_file());
+        assert!(output.join("public/llms.txt").is_file());
+        assert!(output.join("public/llms-full.txt").is_file());
+
+        let generated =
+            fs::read_to_string(output.join("src/content/docs/guides/usage.md")).unwrap();
+        assert!(generated.contains("title: \"Usage\""));
+        assert!(generated.contains("# Usage"));
+
+        let config = fs::read_to_string(output.join("src/content.config.ts")).unwrap();
+        assert!(config.contains("docsLoader()"));
+        assert!(config.contains("covers: z.array(z.string()).optional()"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn site_generation_preserves_existing_frontmatter_title() {
+        let content = "---\ntitle: Existing\ncovers:\n  - src/**\n---\n\n# Other\n";
+        let generated = ensure_starlight_title(content, Path::new("index.md"));
+
+        assert!(generated.contains("title: \"Existing\""));
+        assert!(generated.contains("  - \"src/**\""));
+        assert!(generated.contains("# Other"));
+    }
+
+    #[test]
+    fn site_generation_sanitizes_invalid_frontmatter_lines() {
+        let content = "---\ntitle: Hooks\ncovers:\n  - src/**/*.rs\n.rs\n---\n\n# Hooks\n";
+        let generated = ensure_starlight_title(content, Path::new("hooks.md"));
+
+        assert!(generated.contains("title: \"Hooks\""));
+        assert!(generated.contains("  - \"src/**/*.rs\""));
+        assert!(!generated.contains("\n.rs\n"));
+        assert!(generated.contains("# Hooks"));
     }
 
     #[test]

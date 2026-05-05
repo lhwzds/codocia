@@ -138,6 +138,33 @@ When changed files are available from git, the failure output includes a
 
 Use `--docs <path>` only when the documentation directory is not `docs`.
 
+```bash
+codocia site generate
+```
+
+Generates a local Astro Starlight documentation site from the existing Markdown
+docs without changing the source `docs/` directory. The default output is
+`.codocia/starlight`; use `--output <path>` for another local site directory.
+Running `codocia site` without a subcommand also generates the site.
+
+The generated site copies Markdown into `src/content/docs/`, copies raw
+Markdown into `public/md/`, and writes `public/llms.txt` plus
+`public/llms-full.txt` for AI readers.
+
+```bash
+codocia site build
+codocia site serve
+```
+
+`site build` and `site serve` generate the site first, ensure `npm` is
+available, run `npm install` when `node_modules` is missing, and then run the
+Starlight build or dev server. Use the plain fallback when Node/npm is not
+available:
+
+```bash
+codocia serve --plain
+```
+
 ## Failure Types
 
 `broken covers`

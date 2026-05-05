@@ -50,6 +50,33 @@ section. The library renders committed, staged, and unstaged diff excerpts for
 the relevant files. This keeps the default `check` command useful for both
 humans and agents without adding a separate JSON or planning mode.
 
+## Site Generation
+
+`generate_starlight_site` creates a local Astro Starlight project from existing
+Markdown docs. The generated project is disposable output; the source `docs/`
+directory remains the source of truth.
+
+Generation writes Markdown into two destinations:
+
+- `src/content/docs/` for Starlight pages;
+- `public/md/` for raw Markdown access.
+
+It also writes `public/llms.txt` and `public/llms-full.txt`. The Starlight
+content config extends the docs schema with Codocia's optional `covers` field,
+so pages that already declare coverage metadata can build without changing
+their source frontmatter.
+
+When a source page does not define a `title`, Codocia adds one only to the
+generated Starlight copy. The source Markdown file is not rewritten.
+
+`starlight_build` and `serve_starlight_site` wrap the generated project with the
+Node toolchain. They require `npm`, install dependencies when needed, and run
+the generated site's build or dev-server script.
+
+`serve_plain_docs` is the no-Node fallback. It serves an index of Markdown files
+and simple HTML pages directly from the source docs directory using only the
+Rust standard library. It is intentionally not a Starlight renderer.
+
 ## Git Binding
 
 When a base ref is provided, the library reads three git diff sources:

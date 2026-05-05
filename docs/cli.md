@@ -13,6 +13,10 @@ The Codocia CLI exposes the smallest useful documentation drift loop:
 - `codocia init`
 - `codocia snapshot`
 - `codocia check --base main`
+- `codocia site generate`
+- `codocia site build`
+- `codocia site serve`
+- `codocia serve --plain`
 
 The binary is intentionally thin. It parses command-line arguments with `clap`
 and delegates behavior to the library API.
@@ -48,6 +52,35 @@ hash change actually affects documented behavior.
 Hash changes are review signals. If the diff is formatting-only, comment-only,
 test-only, or internal-only, the correct action can be refreshing the snapshot
 without changing the docs body.
+
+`site generate` generates a local Astro Starlight documentation site from the
+existing Markdown docs. It does not mutate the source docs directory. By
+default, it reads `docs/` and writes `.codocia/starlight`. Running `codocia
+site` without a subcommand is equivalent to `site generate`.
+
+The generated site contains:
+
+- `src/content/docs/` with Starlight-ready Markdown pages;
+- `public/md/` with raw Markdown copies for direct AI access;
+- `public/llms.txt` as a Markdown docs index;
+- `public/llms-full.txt` as a concatenated Markdown bundle;
+- `package.json`, `astro.config.mjs`, `src/content.config.ts`, and
+  `tsconfig.json` for local Astro/Starlight execution.
+
+Use `--output <path>` to choose a different local site directory and
+`--title <name>` to set the Starlight site title.
+
+`site build` runs `site generate`, installs npm dependencies when
+`node_modules` is missing, and runs `npm run build` in the generated site
+directory. Use `--skip-install` when dependencies are already installed and the
+command should not invoke `npm install`.
+
+`site serve` runs the same preparation flow, then starts the Astro dev server.
+Use `--host` and `--port` to choose the bind address.
+
+`serve --plain` starts a tiny built-in HTTP server over the Markdown docs
+without Node/npm or Starlight. This is a fallback for machines that need local
+docs access but do not have the Node toolchain installed.
 
 ## Boundary
 
