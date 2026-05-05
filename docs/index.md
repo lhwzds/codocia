@@ -16,17 +16,14 @@ comments. The goal is to guide a coding agent through the docs work: inspect the
 git diff, find stale or uncovered docs, update the Markdown body when behavior
 changed, and refresh the snapshot only after review.
 
-## Start Here
+## What Codocia Does
 
-- [CLI Workflow](./cli.md): explains the command-line entrypoint and user flow.
-- [Agent Workflow](./agent-workflow.md): gives coding agents a concrete docs
-  maintenance runbook.
-- [Configuration](./configuration.md): explains `codocia.md`, code defaults,
-  density tiers, and documentation quality metrics.
-- [Distribution](./distribution.md): explains GitHub Release assets, npm, and
-  Homebrew installation channels.
-- [Library Implementation](./library.md): explains the Rust library that powers
-  coverage, snapshot, and staleness checks.
+Codocia gives a repository an explicit docs maintenance loop. It does not decide
+what the prose should say; it shows which Markdown pages need review after code
+changes.
+
+Use the sidebar to move between the agent runbook, CLI reference,
+configuration policy, distribution notes, and library implementation details.
 
 ## Maintenance Loop
 
