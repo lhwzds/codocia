@@ -98,6 +98,10 @@ When `--base main` is provided, Codocia also reads git diff information from:
 That lets Codocia report changed source files that have no docs coverage and
 include diff excerpts for files that need documentation review.
 
+When the check passes, Codocia still prints a quality note for AI agents. A
+passing check means coverage and snapshots are current; it does not mean bulk
+generated, low-information docs are acceptable.
+
 ## Commands
 
 ```bash
@@ -135,6 +139,8 @@ Checks documentation coverage and freshness. It exits with a non-zero status
 when docs are stale, covers are broken, or changed source files are uncovered.
 When changed files are available from git, the failure output includes a
 `git diff review` section with committed, staged, and unstaged diff excerpts.
+When the check passes, the output reminds agents not to treat the clean snapshot
+as proof that template-shaped docs are complete.
 
 Use `--docs <path>` only when the documentation directory is not `docs`.
 
@@ -218,6 +224,8 @@ Important rules:
   the snapshot to record that the docs were reviewed.
 - A passing check means the docs snapshot is current, not that the prose is
   perfect.
+- Do not bulk-generate source-file inventory pages just to make coverage pass;
+  low-information pages should remain indexes or drafts, not maintained docs.
 
 ## CI Example
 

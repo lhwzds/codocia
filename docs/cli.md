@@ -49,6 +49,10 @@ prints a `git diff review` section. That section includes committed, staged, and
 unstaged diff excerpts for the relevant files, so an agent can decide whether the
 hash change actually affects documented behavior.
 
+When `check` passes, it still prints a quality note. Passing means covers and
+snapshots are current; it does not validate prose depth or approve bulk
+template-generated docs.
+
 Hash changes are review signals. If the diff is formatting-only, comment-only,
 test-only, or internal-only, the correct action can be refreshing the snapshot
 without changing the docs body.

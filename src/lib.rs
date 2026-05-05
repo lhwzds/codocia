@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 const DIFF_LINE_LIMIT: usize = 80;
+const CHECK_PASS_QUALITY_NOTE: &str = "quality note: check passed only means covers and snapshots are current. Do not bulk-generate templated, low-information docs just to satisfy coverage; read codocia.md, keep Markdown as the source of truth, and only refresh snapshots after reviewing or improving the human-readable prose.";
 const DEFAULT_CODOCIA_POLICY: &str = r#"# Codocia Documentation Policy
 
 Use this file to guide AI coding agents that update Markdown docs in this
@@ -43,6 +44,17 @@ before editing docs.
   when prose should not change.
 - agent usability: a coding agent can follow the page without guessing the next
   inspection, edit, command, or evidence to report.
+
+## Anti-Template Rule
+
+Do not create bulk, template-shaped source-file pages just to make coverage
+look complete. A page that only lists modules, structs, functions, line counts,
+or generic summaries is not sufficient documentation.
+
+Generated source indexes are allowed only when they are clearly marked as
+indexes and do not replace human-readable docs. Real docs should explain
+behavior, contracts, invariants, failure modes, validation, and maintenance
+context at the density tier chosen for the page.
 
 ## Page Defaults
 
@@ -284,6 +296,7 @@ pub fn check(config: &CheckConfig) -> Result<()> {
             code_files.len(),
             covered_by_file.len()
         );
+        println!("{CHECK_PASS_QUALITY_NOTE}");
         return Ok(());
     }
 
@@ -1756,6 +1769,13 @@ mod tests {
         assert!(excerpt.contains("line 0"));
         assert!(!excerpt.contains(&format!("line {}", DIFF_LINE_LIMIT + 1)));
         assert!(excerpt.contains("truncated 2 line(s)"));
+    }
+
+    #[test]
+    fn check_pass_quality_note_warns_against_template_docs() {
+        assert!(CHECK_PASS_QUALITY_NOTE.contains("check passed only means"));
+        assert!(CHECK_PASS_QUALITY_NOTE.contains("Do not bulk-generate templated"));
+        assert!(CHECK_PASS_QUALITY_NOTE.contains("low-information docs"));
     }
 
     fn temp_dir(name: &str) -> PathBuf {

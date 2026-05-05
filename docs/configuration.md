@@ -66,3 +66,15 @@ The default template gives agents five checks for doc completeness:
 These metrics are intentionally Markdown policy, not CLI-enforced checks. The
 agent applies them while updating `docs/**/*.md`, then runs `codocia snapshot`
 only after the prose has been reviewed.
+
+## Anti-Template Rule
+
+The default policy tells agents not to bulk-create source-file inventory pages
+just to satisfy coverage. Pages that only list modules, public declarations,
+line counts, or generic summaries can be useful as generated indexes, but they
+are not sufficient maintained docs.
+
+Repository policies should define when generated indexes are allowed and when a
+page must explain behavior, contracts, invariants, failure modes, validation,
+and maintenance context. `codocia check` reinforces this by printing a quality
+note even when coverage and snapshots pass.

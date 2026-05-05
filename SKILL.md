@@ -22,8 +22,9 @@ CLI and library.
 
 ## Documentation Density
 
-Do not generate placeholder-level docs. Before editing a page, choose one
-density tier from `codocia.md` or this default set.
+Do not generate placeholder-level docs. Do not bulk-create template-shaped
+source-file pages just to satisfy `covers` or make `codocia check` pass. Before
+editing a page, choose one density tier from `codocia.md` or this default set.
 
 - `compact`: Use for formatting-only, comment-only, test-only, or very small
   internal changes. Keep prose unchanged when behavior does not change. If a
@@ -54,6 +55,22 @@ density tier. `codocia.md` can prioritize or specialize them per repository.
   when prose should not change.
 - agent usability: a coding agent can follow the page without guessing the next
   inspection, edit, command, or evidence to report.
+
+## Anti-Template Rule
+
+Avoid low-information pages that merely list modules, structs, functions, line
+counts, or generic summaries. Those pages can be useful as generated source
+indexes, but they are not sufficient docs and should not replace maintained
+Markdown.
+
+When a repository asks for file-level docs, write file-level contracts, not
+inventory pages. Explain what the file owns, what callers rely on, how data
+flows through it, which invariants must hold, what can fail, and which tests or
+commands validate the behavior.
+
+If a generated page has no real behavioral detail, do not refresh the snapshot
+as though the docs are complete. Improve the prose or mark it explicitly as an
+index/draft according to the repository policy.
 
 ## Maintenance Loop
 
@@ -109,6 +126,7 @@ Markdown remains available under `public/md/`.
 - If the diff is formatting-only, comment-only, test-only, or internal-only,
   keep prose unchanged and refresh the snapshot after review.
 - A passing snapshot check means file hashes are current; it does not prove the
-  prose is complete.
+  prose is complete. Do not treat a passing `codocia check` as permission to
+  keep bulk-generated, low-information docs.
 - Review whether the chosen density tier matches the change risk and blast
   radius before committing.
