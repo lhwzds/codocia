@@ -1,6 +1,6 @@
 {
   "name": "codocia",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Documentation drift checker for AI coding agents.",
   "keywords": [
     "docs",
