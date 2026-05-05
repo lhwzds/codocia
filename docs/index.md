@@ -19,6 +19,8 @@ changed, and refresh the snapshot only after review.
 ## Start Here
 
 - [CLI Workflow](./cli.md): explains the command-line entrypoint and user flow.
+- [Agent Workflow](./agent-workflow.md): gives coding agents a concrete docs
+  maintenance runbook.
 - [Configuration](./configuration.md): explains `codocia.md`, code defaults,
   density tiers, and documentation quality metrics.
 - [Distribution](./distribution.md): explains GitHub Release assets, npm, and

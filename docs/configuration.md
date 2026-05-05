@@ -22,6 +22,10 @@ Markdown policy document for AI coding agents. It can define:
 - project terms, boundaries, and rules that generic agent instructions cannot
   know.
 
+Do not create `codocia.toml` for defaults. Runtime defaults stay in the CLI and
+library. `codocia.md` is for instructions that a coding agent reads before
+editing Markdown.
+
 ## Defaults
 
 Codocia keeps the operational defaults in the CLI and library code:
@@ -78,3 +82,27 @@ Repository policies should define when generated indexes are allowed and when a
 page must explain behavior, contracts, invariants, failure modes, validation,
 and maintenance context. `codocia check` reinforces this by printing a quality
 note even when coverage and snapshots pass.
+
+## Repository-Specific Example
+
+A product repository can extend the generated policy with concrete page rules:
+
+```md
+## Repository Rules
+
+- language: English
+- default density: standard
+- config, CLI, API, and schema pages: dense
+- generated source indexes: allowed only under `docs/source-index/`
+- file-level docs: write contracts, not declaration inventories
+
+## Snapshot Rules
+
+- Run `codocia check --base main` before editing snapshots.
+- Refresh snapshots only after the docs body was reviewed.
+- If a stale file is formatting-only, write the snapshot-only reason in the
+  final agent response.
+```
+
+Keep these rules close to the repository's actual docs practice. A short,
+specific policy is better than a long generic one.

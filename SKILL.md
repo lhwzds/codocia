@@ -76,13 +76,25 @@ index/draft according to the repository policy.
 
 1. Run `codocia check --base main`.
 2. Read `codocia.md` when present.
-3. Read every stale docs page and the `git diff review` excerpts reported by
+3. Classify every reported section:
+   - `broken covers`: fix incorrect globs or stale page ownership.
+   - `missing snapshots`: review the page before creating snapshot metadata.
+   - `stale docs`: compare the Markdown body with the changed source files.
+   - `changed code without docs coverage`: add coverage to an existing concept
+     page or create a real docs page.
+   - `uncovered code files`: treat as inventory, not a reason to bulk-generate
+     shallow pages.
+4. Read every stale docs page and the `git diff review` excerpts reported by
    the check.
-4. Choose the page's density tier and metric priorities, then update the
-   human-readable Markdown body only when the diff changes documented behavior.
-5. Add or adjust `covers` when changed code is uncovered.
-6. Run `codocia snapshot`.
-7. Run `codocia check --base main` again.
+5. Choose the page's density tier and metric priorities, then update the
+   human-readable Markdown body only when the diff changes documented behavior,
+   public contracts, config, commands, workflows, failure modes, or maintenance
+   guidance.
+6. If a hash changed but the diff is formatting-only, comment-only, test-only,
+   or internal-only, leave the prose unchanged and record that decision in your
+   final response.
+7. Run `codocia snapshot` only after review.
+8. Run `codocia check --base main` again.
 
 ## Starlight Publishing
 
@@ -130,3 +142,14 @@ Markdown remains available under `public/md/`.
   keep bulk-generated, low-information docs.
 - Review whether the chosen density tier matches the change risk and blast
   radius before committing.
+
+## Final Response
+
+When you finish a Codocia docs maintenance task, report:
+
+- docs pages changed;
+- source files or diffs reviewed;
+- whether `docs/.codocia-snapshot.json` changed;
+- validation commands and their results;
+- snapshot-only decisions and the reason;
+- remaining docs gaps or intentionally deferred coverage.

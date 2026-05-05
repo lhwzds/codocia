@@ -26,6 +26,18 @@ and delegates behavior to the library API.
 
 ## Commands
 
+| Command | Reads | Writes | Needs git | Needs npm | Next action |
+| --- | --- | --- | --- | --- | --- |
+| `codocia` | `SKILL.md` bundled in the binary | stdout | no | no | Give the printed skill to an agent. |
+| `codocia skill` | `SKILL.md` bundled in the binary | stdout | no | no | Same as `codocia`. |
+| `codocia init` | existing `codocia.md` and `docs/index.md` paths | missing `codocia.md`, missing `docs/index.md` | no | no | Edit `codocia.md`, then write real docs pages. |
+| `codocia snapshot` | `docs/**/*.md`, covered source files | `docs/.codocia-snapshot.json` | no | no | Run only after docs were reviewed. |
+| `codocia check --base main` | docs, snapshot, source files, git diff | stdout/stderr only | yes, for `--base` | no | Review failures, update docs or snapshot. |
+| `codocia site generate` | source docs | `.codocia/starlight` by default | no | no | Build or serve the generated site. |
+| `codocia site build` | source docs and generated site | `.codocia/starlight`, `node_modules` if needed | no | yes | Inspect build output. |
+| `codocia site serve` | source docs and generated site | `.codocia/starlight`, `node_modules` if needed | no | yes | Open the local dev URL. |
+| `codocia serve --plain` | source docs | stdout and HTTP responses | no | no | Use when Node/npm is unavailable. |
+
 `init` creates the local documentation workspace. It writes `codocia.md` and
 `docs/index.md` only when those files do not already exist. The runtime defaults
 stay in the CLI and library, not in a TOML file.
@@ -56,6 +68,33 @@ template-generated docs.
 Hash changes are review signals. If the diff is formatting-only, comment-only,
 test-only, or internal-only, the correct action can be refreshing the snapshot
 without changing the docs body.
+
+## Check Output
+
+`codocia check` exits successfully only when coverage structure and snapshots
+are current. It can still print a quality note reminding agents that passing
+does not validate prose quality.
+
+Failure output can include:
+
+- `broken covers`: a `covers` pattern matched no files.
+- `missing snapshots`: a page has `covers` but is not present in
+  `docs/.codocia-snapshot.json`.
+- `stale docs`: a covered file hash changed.
+- `missing covered files`: a snapshot entry points at a file that no longer
+  exists.
+- `changed code without docs coverage`: a changed source file has no covering
+  page.
+- `changed code with stale docs`: a changed source file is covered by one or
+  more stale pages.
+- `uncovered code files`: source files are present but not covered by docs.
+- `git diff review`: committed, staged, and unstaged diff excerpts for the
+  relevant files.
+
+For agents, the important distinction is behavior impact. A stale hash is a
+review signal. It becomes a prose edit only when the diff changes documented
+behavior, contracts, commands, config, workflows, failure modes, or operational
+guidance.
 
 `site generate` generates a local Astro Starlight documentation site from the
 existing Markdown docs. It does not mutate the source docs directory. By
@@ -90,3 +129,8 @@ docs access but do not have the Node toolchain installed.
 
 The CLI should stay as a command adapter. It should not parse Markdown,
 calculate coverage, call git directly, or decide documentation policy.
+
+`site generate`, `site build`, and `site serve` do not publish public websites.
+They create or run a local disposable Starlight project from the source
+Markdown. Deploying that output belongs to the hosting repository or deployment
+pipeline.

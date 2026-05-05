@@ -23,6 +23,11 @@ documentation density, quality metrics, and page defaults. Codocia does not
 parse that file as machine config; coding agents read it before updating
 Markdown docs.
 
+The template also includes an anti-template rule. It tells agents not to create
+bulk source-file inventory pages just to satisfy coverage. Real docs should
+explain behavior, contracts, invariants, failure modes, validation, and
+maintenance context.
+
 Runtime defaults such as the docs root and check base are kept in the CLI and
 library code, not in a TOML file.
 
@@ -49,6 +54,11 @@ For stale or uncovered changed files, the report includes a `git diff review`
 section. The library renders committed, staged, and unstaged diff excerpts for
 the relevant files. This keeps the default `check` command useful for both
 humans and agents without adding a separate JSON or planning mode.
+
+When no coverage or freshness problems are found, `check` still prints a
+quality note. The note reminds agents that passing only proves covers and
+snapshots are current; it does not validate prose quality or approve
+bulk-generated template docs.
 
 ## Site Generation
 

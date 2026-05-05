@@ -17,6 +17,14 @@ their content hashes, and later checks whether those files changed.
 
 ## Quickstart
 
+Install Codocia from one of the package channels:
+
+```bash
+cargo install codocia
+# or
+npm install -g codocia
+```
+
 Create the docs workspace:
 
 ```bash
@@ -57,6 +65,12 @@ Later, after code changes, check whether docs are stale:
 ```bash
 codocia check --base main
 ```
+
+If the check reports stale or uncovered code, read the affected source files
+and docs pages before changing snapshots. Update Markdown when behavior,
+contracts, workflows, or operational guidance changed. If the diff is not
+documentation-impacting, keep prose unchanged and refresh the snapshot after
+review.
 
 ## How It Works
 
@@ -144,6 +158,25 @@ as proof that template-shaped docs are complete.
 
 Use `--docs <path>` only when the documentation directory is not `docs`.
 
+## Reading `codocia check` Output
+
+The check output is a review queue. Use each section as a concrete next action:
+
+| Section | Meaning | Next action |
+| --- | --- | --- |
+| `broken covers` | A docs page has a `covers` pattern that matches no files. | Fix the glob, move the coverage to the right page, or remove stale coverage. |
+| `missing snapshots` | A page declares `covers`, but no snapshot entry exists yet. | Review the page, then run `codocia snapshot`. |
+| `stale docs` | A covered file's content hash changed. | Read the diff and update prose only if documented behavior changed. |
+| `missing covered files` | A previously covered file no longer exists. | Update the page ownership and `covers` metadata. |
+| `changed code without docs coverage` | A changed source file is not covered by any page. | Add it to an existing conceptual page or create a real docs page. |
+| `changed code with stale docs` | A changed source file is covered by docs that are stale. | Read those docs and the diff together. |
+| `uncovered code files` | Source files exist without coverage. | Treat as inventory; do not generate shallow one-page-per-file docs. |
+| `git diff review` | Diff excerpts for relevant files. | Use this as evidence for doc edits or snapshot-only review. |
+
+When `codocia check` passes, it still prints a quality note. Passing means
+coverage and snapshots are current. It does not prove prose depth, usability, or
+maintained documentation quality.
+
 ```bash
 codocia site generate
 ```
@@ -226,6 +259,10 @@ Important rules:
   perfect.
 - Do not bulk-generate source-file inventory pages just to make coverage pass;
   low-information pages should remain indexes or drafts, not maintained docs.
+- When finishing, report the changed docs pages, source files reviewed,
+  snapshot changes, validation commands, and any remaining docs gaps.
+
+For a more detailed runbook, see [Agent Workflow](docs/agent-workflow.md).
 
 ## CI Example
 

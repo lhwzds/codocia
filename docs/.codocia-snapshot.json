@@ -1,16 +1,24 @@
 {
-  "commit": "59a0072e9ba4c3b96ec5ddd0657c21c49c160185",
+  "commit": "a805b06119a87bc1a66e3dcc15392187b8a28e1e",
   "docs": {
+    "docs/agent-workflow.md": {
+      "covers": ["SKILL.md", "codocia.md", "src/lib.rs"],
+      "files": {
+        "SKILL.md": "4f2d3f8e8a453f47",
+        "codocia.md": "87f52c62ee8568a3",
+        "src/lib.rs": "36b469dda75b06f0"
+      }
+    },
     "docs/cli.md": {
       "covers": ["src/main.rs"],
       "files": {
-        "src/main.rs": "30902bed3557e5dd"
+        "src/main.rs": "c96f04bba8461e7f"
       }
     },
     "docs/configuration.md": {
       "covers": ["src/lib.rs"],
       "files": {
-        "src/lib.rs": "4fc9be4ac560ff6d"
+        "src/lib.rs": "36b469dda75b06f0"
       }
     },
     "docs/distribution.md": {
@@ -18,13 +26,13 @@
       "files": {
         "homebrew-tap-template/Formula/codocia.rb": "fa46d16f5c776432",
         "npm/scripts/install.js": "48704294a012bfd9",
-        "npm/scripts/install.test.js": "695e7d83cb4cb777"
+        "npm/scripts/install.test.js": "4b7c83035ea4b502"
       }
     },
     "docs/library.md": {
       "covers": ["src/lib.rs"],
       "files": {
-        "src/lib.rs": "4fc9be4ac560ff6d"
+        "src/lib.rs": "36b469dda75b06f0"
       }
     }
   }
