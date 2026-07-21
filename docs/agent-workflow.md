@@ -3,160 +3,318 @@ title: Agent Workflow
 covers:
   - SKILL.md
   - codocia.md
-  - src/lib.rs
+  - src/codex_runner.rs
+  - src/generate.rs
 ---
 
 # Agent Workflow
 
-Codocia is designed for coding agents that need to keep Markdown docs aligned
-with code changes. The command output is a review queue, not an automatic docs
-generator.
+Use this runbook to create or maintain repository documentation with Codocia.
+Generation is the default workflow; snapshot/check remains the smaller
+maintenance loop after a complete managed docs system exists.
 
-Use this page when you are an agent running inside a product repository that has
-Codocia installed.
+## Before Generation
 
-## Operating Model
+### Confirm Authorization
 
-Markdown remains the source of truth. Source files can explain implementation
-details, but maintained repository docs live in `docs/`.
+Codex may send allowlisted repository content to the printed OpenAI Codex
+service selected by the installed CLI's built-in defaults. Custom providers
+and endpoints are ignored in strict generation mode.
+Codocia creates a temporary mirror containing only selected, hash-validated
+files; read-only sandboxing prevents writes but does not keep mirror content
+local.
 
-Codocia links the two sides:
+Before authorizing an upload:
 
-1. Markdown pages declare `covers` frontmatter.
-2. `codocia snapshot` records hashes for the covered files.
-3. `codocia check` compares the snapshot with current files and the git diff.
-4. The agent reads the changed code and updates Markdown only when behavior,
-   contract, workflow, or operational guidance changed.
-5. The agent refreshes the snapshot after the docs body has been reviewed.
+1. identify the selected workspace;
+2. confirm the Codex account and service are authorized for its source;
+3. inspect for secrets, credentials, private keys, customer data, and sensitive
+   files that default inventory rules may not recognize;
+4. confirm that relevant private-source retention and governance requirements
+   are satisfied.
 
-The snapshot is evidence of review. It is not evidence that the prose is good.
+Use repeatable anchored workspace-relative `--include` and `--exclude` patterns
+to narrow the default safe-text scope. Excludes win and include patterns cannot
+re-enable a built-in safety exclusion. Before the first Codex turn, Codocia
+prints every selected path and writes the exact paths, roles, sizes, and hashes
+to `.codocia/runs/<run-id>/upload-scope.json`, together with a canonical scope
+fingerprint. Run the intended `codocia generate ...` command without upload
+flags first; it stops locally. Then bind authorization to that exact output
+with `--allow-code-upload --upload-scope-fingerprint <sha256>`.
 
-## First Setup
+The mirror also contains Codocia schemas and run metadata. Migration docs are
+remapped below `.codocia/migration/`, so instruction-like names are not placed
+at the mirror root. Inventory can reveal excluded path names and reasons even
+though excluded file contents are absent.
 
-Run this once in a repository that does not yet use Codocia:
+On macOS, a default-deny `sandbox-exec` profile exposes the mirror read-only.
+The inherited host environment is cleared. Authentication and scratch state
+live in a leased temporary `CODEX_HOME` accessible only to the canonical Codex
+parent; model-launched children cannot read it or open remote connections. A
+private Codex executable is unlinked before the prompt, preventing child
+re-execution of the privileged path, and optional extension/tool surfaces are
+disabled. Generation fails closed elsewhere. This does not stop the configured
+service from receiving the allowlisted mirror.
+
+### Read Repository Policy
+
+Read `codocia.md` when present. It may define language, terminology, page
+density, architecture priorities, unsupported boundaries, and validation
+expectations. It is prompt policy, not parsed machine configuration.
+
+### Inspect Existing Docs
+
+Existing Markdown is migration context. Identify:
+
+- unique verified knowledge that must survive;
+- monolithic pages that should be split;
+- stale claims that must not be copied;
+- reproducibility or oracle records that should remain stable;
+- human-authored pages that should be preserved by default.
+
+## Plan-Only Review
+
+For a sensitive, large, or unfamiliar repository, start with:
 
 ```bash
-codocia init
+codocia generate --plan-only \
+  --allow-code-upload \
+  --upload-scope-fingerprint 'sha256:<printed-scope-fingerprint>'
 ```
 
-This creates `codocia.md` and `docs/index.md` when they do not already exist.
-Read `codocia.md` before writing docs. It is the repository's policy for
-density, metrics, page defaults, language, and project-specific rules.
+This contacts Codex but does not publish Markdown. Inspect the latest run:
 
-Then add `covers` metadata to real docs pages:
-
-```md
----
-title: Runtime
-covers:
-  - crates/runtime/**
-  - python/runtime.py
----
-
-# Runtime
-
-Explain the runtime behavior here.
+```text
+.codocia/runs/<run-id>/inventory.json
+.codocia/runs/<run-id>/upload-scope.json
+.codocia/runs/<run-id>/doc-plan.json
 ```
 
-After the prose is useful, record the first snapshot:
+Verify that:
+
+- the exact upload scope contains only intended evidence and migration context;
+- included files are truly first-party evidence;
+- excluded files have appropriate reasons;
+- tests, manifests, scripts, kernels, schemas, and configuration are not
+  accidentally omitted;
+- every included file belongs to a substantive page;
+- the file atlas is an index rather than a substitute for deep pages, and every
+  source-covering page body cites each of its exact `source_files` paths in
+  Markdown inline code;
+- algorithms, stateful components, serving flows, and verification gates get
+  dedicated treatment where appropriate; every algorithm page has explicit
+  problem, principle/equation, data/state, implementation, complexity,
+  invariant/failure, and test/evidence facet-to-heading mappings;
+- page paths and language match the repository's needs.
+- for a bilingual run, both language trees contain their own index and file
+  atlas, every included source file has substantive coverage in each language,
+  and dependencies and navigation stay within the corresponding language;
+
+The authorized plan-only run is not an offline privacy preview; the allowlisted
+mirror is sent through Codex. Running the same command without upload flags is
+the offline exact-scope preflight. `--dry-run` is only an alias for
+`--plan-only`.
+
+## Full Generation
+
+Run:
+
+```bash
+codocia generate --allow-code-upload \
+  --upload-scope-fingerprint 'sha256:<printed-scope-fingerprint>'
+```
+
+Or provide focused requirements:
+
+```bash
+codocia generate \
+  "Write complete Chinese and English maintainer docs; explain algorithms, state, and reference tests" \
+  --language zh-CN \
+  --secondary-language en \
+  --audience maintainers \
+  --depth deep \
+  --allow-code-upload \
+  --upload-scope-fingerprint 'sha256:<printed-scope-fingerprint>'
+```
+
+Codocia will:
+
+1. create a run directory and deterministic inventory;
+2. print and persist `upload-scope.json`, verify its exact reviewed fingerprint,
+   then create the allowlist mirror;
+3. obtain and validate a structured documentation plan;
+4. generate each page as structured read-only Codex output, with primary pages
+   at the docs root and optional secondary pages below their locale directory;
+5. write candidate Markdown only to staging;
+6. verify source fingerprint, page contracts, coverage, bodies, and relative,
+   site-root, or heading-fragment links, then run bounded page-scoped repairs
+   for deterministic findings;
+7. run a factual audit and bounded targeted repairs, followed by deterministic
+   repair again if an audit correction introduces a structural defect;
+8. write the managed manifest;
+9. publish the docs recoverably;
+10. run snapshot and check;
+11. optionally build Starlight with `--site`.
+
+Every generation turn is ephemeral, ignores user config and repository rules,
+clears the host environment, and uses the read-only mirror as its working
+directory. Only the Codex parent may write isolated state and one exact result
+path or access HTTPS. Codocia alone publishes validated Markdown.
+
+## During a Failure
+
+Do not delete run artifacts or manually silence the verifier. Inspect:
+
+- `run.json` for the last phase and status;
+- `upload-scope.json` for the exact files exposed to the Codex working mirror;
+- `results/*.stderr.txt` and event JSONL for Codex failures;
+- `doc-plan.json` for incomplete or invalid ownership;
+- `staging/` for the actual draft;
+- `verification*.json` for deterministic failures;
+- `audit-*.json` for factual errors and evidence;
+- `integration-transaction.json` for active or committed docs/site publication
+  state, including whether each live tree previously existed;
+- `backup/`, `failed-publish/`, and `failed-site/` for recoverable publication
+  and rendering state.
+
+If the source tree is unchanged and artifacts are valid, continue with:
+
+```bash
+codocia generate --resume \
+  --allow-code-upload \
+  --upload-scope-fingerprint 'sha256:<printed-scope-fingerprint>'
+```
+
+Resume selects the latest incomplete run. Its saved configuration fingerprint
+must match the current goal, audience, depth, model, filters, and publication
+options; the saved normalized plan fingerprint and source fingerprint must also
+match. If any of these changed, start a new run instead of forcing stale
+output. Completed runs cannot be resumed.
+
+Resume artifacts use generation schema version 2 and canonical
+`sha256:<64 lowercase hexadecimal digits>` fingerprints. Legacy 64-bit values
+and unknown algorithms are not migrated in place; start a new run.
+
+## Existing Docs and Pruning
+
+Default generation preserves truly unmanaged docs. It replaces or retires a
+previous managed page only when its live hash still matches the previous
+manifest. Local edits and unmanaged path collisions stop publication.
+
+Use:
+
+```bash
+codocia generate --prune-unmanaged \
+  --allow-code-upload \
+  --upload-scope-fingerprint 'sha256:<printed-scope-fingerprint>'
+```
+
+only after confirming that the new plan intentionally replaces the complete
+docs tree. The flag can remove hand-authored or legacy pages absent from the
+plan. A backup is retained in the run directory, but pruning is still a
+material deletion from the published docs root.
+
+Managed pages declare `codocia_managed: true`. Do not remove that marker while
+expecting the page to remain part of the generated set. Do not hand-edit
+`.codocia-manifest.json` or snapshot hashes.
+
+## Quality Review
+
+The deterministic verifier catches structural failures; the factual audit
+catches semantic failures. Human review should still evaluate:
+
+- whether the information architecture matches how maintainers learn the
+  system;
+- whether algorithms explain principles, not merely function names;
+- whether state, data shapes, transactions, and concurrency are accurate;
+- whether support claims are narrower than or equal to test evidence;
+- whether commands and examples are runnable;
+- whether model, backend, protocol, and operational boundaries are explicit;
+- whether duplicated prose will drift across pages;
+- whether excluded scope is visible and honest.
+
+A passing run requires the final factual audit to return `approved: true` with
+no error-severity finding. It is strong evidence, not an infallibility
+guarantee.
+
+## File-Level Documentation
+
+When users need to understand every file, create one exhaustive File Atlas row
+per included file with:
+
+- path;
+- ownership;
+- callers and entry points;
+- data or state handled;
+- algorithm or protocol role;
+- failure assumptions;
+- tests and deep-page links.
+
+Then organize deep pages by coherent subsystem or algorithm. Do not generate 50
+nearly empty pages solely because the repository has 50 source files.
+
+## Ongoing Drift Maintenance
+
+After complete generation, a narrow code change can use the retained loop:
+
+```bash
+codocia check --base main
+```
+
+Read every stale page together with the relevant committed, staged, and
+unstaged diff. Update Markdown only if behavior, contract, state, workflow,
+failure mode, or maintenance guidance changed. Formatting-only or internal-only
+changes may require snapshot review without a prose change.
+
+Then run:
 
 ```bash
 codocia snapshot
 codocia check --base main
 ```
 
-Commit the Markdown body and `docs/.codocia-snapshot.json` together.
+Do not snapshot before review merely to hide the stale signal.
 
-## Normal Update Loop
+Legacy `goal` and `agent codex` helpers are disabled because they did not share
+the acknowledgement, mirror, and transactional publication boundary. Use
+`generate` with a focused goal when Codex authoring is needed.
 
-Use this loop after code changes:
+## Site Review
 
-```bash
-codocia check --base main
-```
-
-If the command fails, read the sections in this order:
-
-1. `changed code without docs coverage`
-2. `stale docs`
-3. `git diff review`
-4. `broken covers`
-5. `missing covered files`
-6. `uncovered code files`
-
-Then inspect the source files and the docs pages yourself. Update docs only when
-the diff changes documented behavior, public contracts, CLI flags, config
-schema, operational workflow, failure modes, or maintenance guidance.
-
-When the review is complete:
+To render the current Markdown:
 
 ```bash
-codocia snapshot
-codocia check --base main
+codocia site build
+codocia site serve
 ```
 
-Do not run `codocia snapshot` first. That hides the stale signal before the docs
-have been reviewed.
+Or request the build as part of generation:
 
-## How To Interpret Results
+```bash
+codocia generate --site \
+  --allow-code-upload \
+  --upload-scope-fingerprint 'sha256:<printed-scope-fingerprint>'
+```
 
-`stale docs` means a covered file hash changed. It does not always mean the
-Markdown body needs edits. Formatting-only, comment-only, test-only, or purely
-internal refactors can be handled by reviewing the diff and refreshing the
-snapshot without changing prose.
+The Starlight directory is generated output. Review and edit `docs/`, not
+`.codocia/starlight`. During `generate --site`, site-build failure restores the
+previous docs and previous site and preserves partial output. Direct site
+commands also assemble a fresh owned staging tree before atomic replacement, so
+old Astro/npm files are not executed. Use `codocia serve --plain` when Node/npm
+is unavailable; it serves only regular, symlink-free `.md` files.
 
-`changed code without docs coverage` means the git diff contains a source file
-that no docs page covers. Prefer adding the file to an existing page when the
-change belongs to an already documented concept. Create a new page only when
-the file introduces a new user-visible concept, workflow, contract, or
-maintenance boundary.
+## Completion Report
 
-`uncovered code files` can be noisy on a new repository. Treat it as a coverage
-inventory. Do not answer it by generating one shallow page per source file.
+Report concrete evidence:
 
-`broken covers` and `missing covered files` are structural problems. Fix paths,
-globs, or page ownership before refreshing snapshots.
-
-## Quality Bar
-
-Do not generate bulk template docs to make coverage pass. A low-information page
-that only lists modules, structs, functions, line counts, or generic summaries
-is not maintained documentation.
-
-Useful docs should usually explain:
-
-- what behavior the page owns;
-- which files or modules implement that behavior;
-- which commands, APIs, config keys, or schemas users rely on;
-- what can fail and how to recognize it;
-- which invariants future agents must preserve;
-- which tests, builds, or manual checks validate the behavior;
-- when not to update the page.
-
-For file-level docs, write a file contract. Explain what the file owns, how
-callers use it, what data flows through it, and what assumptions must remain
-true. Do not stop at an inventory of declarations.
-
-## Snapshot Rules
-
-Refresh `docs/.codocia-snapshot.json` only after one of these is true:
-
-- the docs body was updated to match a behavior change;
-- the diff was reviewed and did not require prose changes;
-- a `covers` pattern was corrected and the page ownership is still accurate.
-
-Do not refresh snapshots to silence a failing check when the Markdown body is
-still stale or shallow.
-
-## What To Report
-
-When finishing a docs maintenance task, report:
-
-- which docs pages changed;
-- which source files drove the update;
-- whether snapshots changed;
-- which validation commands ran;
-- any remaining docs gaps or intentionally ignored diffs.
-
-Keep the report concrete. A future agent should be able to repeat the review
-from the command output and changed files.
+- run directory and resume status;
+- exact upload-scope path and selected file count;
+- inventory included/excluded counts and notable exclusions;
+- planned and generated page counts;
+- existing docs preserved or pruned;
+- deterministic verification outcome;
+- factual audit and repair rounds;
+- snapshot/check result;
+- optional site result;
+- remaining warnings or deliberately excluded scope;
+- confirmation that no commit, push, deployment, or source edit was performed.

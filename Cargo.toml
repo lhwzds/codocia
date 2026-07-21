@@ -1,13 +1,13 @@
 [package]
 name = "codocia"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
-description = "Detect documentation drift between Markdown docs and fast-moving code."
+description = "Generate complete, source-grounded Markdown documentation from code with Codex."
 repository = "https://github.com/lhwzds/codocia"
 documentation = "https://docs.rs/codocia"
 readme = "README.md"
-keywords = ["docs", "markdown", "drift", "documentation"]
+keywords = ["docs", "markdown", "codex", "documentation"]
 categories = ["development-tools", "command-line-utilities"]
 exclude = ["PLAN.md", ".github", "homebrew-tap-template", "npm"]
 
@@ -18,3 +18,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+pulldown-cmark = { version = "0.13", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+unicode-normalization = "0.1"

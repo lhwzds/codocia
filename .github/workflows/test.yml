@@ -11,20 +11,35 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Test and lint (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy
 
       - name: Check formatting
         run: cargo fmt --check
 
       - name: Run tests
-        run: cargo test
+        run: cargo test --all-targets
+
+      - name: Run macOS Seatbelt integration probes
+        if: runner.os == 'macOS'
+        run: cargo test read_boundary_profile_ -- --ignored
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Verify package
+        if: runner.os == 'Linux'
         run: cargo publish --dry-run

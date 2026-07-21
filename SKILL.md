@@ -1,155 +1,309 @@
-# Codocia Docs Skill
+# Codocia Documentation Generation Skill
 
-Use this guide when maintaining Markdown docs in a repository that uses Codocia.
-This skill is for AI coding agents such as Codex, Claude Code, and OpenCode
-that need to keep repository docs aligned with code changes.
+Use this guide when generating or maintaining Markdown documentation in a
+repository that uses Codocia.
 
 ## Core Rule
 
-The product repository owns `docs/` as the source of truth. Codocia does not
-generate prose from source comments and does not create a hidden local skill
-folder.
+Treat repository source and tests as evidence. Produce a coherent documentation
+system that explains behavior, algorithms, contracts, state, failure modes, and
+verification. Do not manufacture a shallow one-page-per-file inventory merely
+to satisfy coverage.
+
+Markdown under `docs/` is the maintained source of truth. Generated site output
+is disposable.
+
+## Security Gate
+
+`codocia generate` invokes the installed Codex CLI while ignoring user
+configuration and clearing the host environment. It may send inspected source
+to the OpenAI Codex service selected by the CLI's built-in defaults. Custom
+providers and custom endpoints are not supported.
+
+Generation copies only selected, hash-validated files into a temporary
+allowlist mirror. Codex runs from that mirror with `--sandbox read-only`,
+`--ephemeral`, `--ignore-user-config`, and `--ignore-rules`. Before running:
+
+Integrity fields are canonical `sha256:<64 lowercase hexadecimal digits>`
+values. Legacy 64-bit or unknown-algorithm artifacts fail closed and must be
+regenerated rather than edited or coerced.
+
+1. confirm the printed OpenAI Codex destination is authorized to receive the source;
+2. review the repository for secrets and unusually sensitive files;
+3. use repeatable `--include` and `--exclude` patterns when the default safe
+   text scope is broader than intended;
+4. run the intended command without upload flags to print the exact scope;
+5. pass `--allow-code-upload` together with that exact
+   `--upload-scope-fingerprint` only after accepting it.
+
+Before Codex starts, inspect the exact path list and scope fingerprint printed
+by Codocia and retained in `.codocia/runs/<run-id>/upload-scope.json`. A
+mismatch stops before mirror creation or Codex. On macOS, an outer
+default-deny `sandbox-exec` profile exposes the mirror read-only. A temporary
+authentication home is accessible only to the Codex parent process; child
+processes inherit neither host secrets nor remote network access. A private
+Codex executable is unlinked before the prompt, and optional extension/tool
+surfaces are disabled. Generation fails closed on other operating systems. The
+acknowledgement is required for plan-only mode too, because planning still sends
+the mirrored files to Codex. Codocia-generated inventory metadata may still
+disclose excluded path names and reasons; excluded file contents are absent.
+
+## Complete Generation
+
+Generate the default English developer documentation:
+
+```bash
+codocia generate
+codocia generate \
+  --allow-code-upload \
+  --upload-scope-fingerprint 'sha256:<printed-scope-fingerprint>'
+```
+
+Add repository-specific direction when needed:
+
+```bash
+codocia generate \
+  "Explain the algorithms, runtime state, and reference gates in Chinese and English" \
+  --language zh-CN \
+  --secondary-language en \
+  --audience maintainers \
+  --depth deep \
+  --allow-code-upload \
+  --upload-scope-fingerprint 'sha256:<printed-scope-fingerprint>'
+```
+
+To inspect the inventory and page plan without publishing Markdown:
+
+```bash
+codocia generate --plan-only \
+  --allow-code-upload \
+  --upload-scope-fingerprint 'sha256:<printed-scope-fingerprint>'
+```
+
+Plan-only output is stored in `.codocia/runs/<run-id>/`. It still contacts
+Codex and may disclose inspected source.
+
+## Generation Model
+
+Codocia owns orchestration and publication:
+
+1. Build a deterministic inventory from tracked and non-ignored untracked
+   files, or from a sorted non-Git fallback walk.
+2. Apply anchored workspace-relative include/exclude filters, record every
+   disposition, and compute a source fingerprint.
+3. Persist and print `upload-scope.json`, validate its reviewed fingerprint,
+   materialize the temporary allowlist mirror, then ask Codex for a
+   JSON-Schema-constrained documentation plan.
+4. Require every included file to belong to a substantive page, not only the
+   index or file atlas.
+5. Ask Codex for each page as structured JSON from the mirror in a read-only,
+   ephemeral Codex turn that ignores user config and repository rules.
+6. Normalize `codocia_managed: true`, exact page `language`, and exact `covers`
+   frontmatter.
+7. Write drafts to the run's staging tree; Codex does not edit repository files.
+8. Verify the full staged set deterministically.
+9. Run a separate factual audit and bounded targeted repairs.
+10. Publish the docs recoverably, then run snapshot and check.
+11. Build Starlight only when `--site` was requested.
 
 ## Repository Policy
 
-Read `codocia.md` before editing docs when the file exists. It is the
-repository's agent-readable documentation policy: default density, metric
-priorities, page defaults, and project-specific rules.
+Read `codocia.md` when it exists. It is free-form policy for Codex and can
+define language, audience, terminology, density, page priorities, known
+boundaries, and validation expectations.
 
-If `codocia.md` does not exist, use the default density tiers and metrics below.
-Do not treat `codocia.md` as machine-parsed config; code defaults live in the
-CLI and library.
+Codocia does not currently parse `codocia.md` as machine configuration. There
+is no active `codocia.toml` contract; runtime options come from CLI defaults and
+flags.
+
+When `--secondary-language` is present, treat it as a second complete
+documentation product, not a summary layer. The primary language stays at the
+docs root; the secondary language is written below its normalized locale
+directory. Each language must have its own index and file atlas and substantive
+coverage of every included source file. Do not add cross-language plan
+dependencies.
 
 ## Documentation Density
 
-Do not generate placeholder-level docs. Do not bulk-create template-shaped
-source-file pages just to satisfy `covers` or make `codocia check` pass. Before
-editing a page, choose one density tier from `codocia.md` or this default set.
+- `compact`: concise purpose, observable behavior, important interfaces, and
+  validation. Use only when the repository is small or the user explicitly
+  requests it.
+- `standard`: purpose, data flow, public commands or APIs, configuration,
+  constraints, failure modes, examples, and validation.
+- `deep`: architecture boundaries, algorithms and principles, state
+  transitions, invariants, complexity, compatibility, edge cases, reference
+  evidence, and maintenance guidance.
 
-- `compact`: Use for formatting-only, comment-only, test-only, or very small
-  internal changes. Keep prose unchanged when behavior does not change. If a
-  note is needed, state the changed behavior, affected command or API, and the
-  validation signal.
-- `standard`: Use as the default for user-visible behavior, CLI flags, config,
-  workflows, package surfaces, and normal feature work. Cover purpose,
-  inputs and outputs, commands or APIs, constraints, failure modes, at least one
-  concrete example, and validation.
-- `dense`: Use for public contracts, agent workflows, architecture, release or
-  deploy loops, runtime boundaries, schemas, and pages that future coding agents
-  will rely on. Include invariants, state transitions, edge cases,
-  compatibility notes, cross-links, operational checks, common mistakes, and
-  when not to change the page.
+The explicit `generate` command defaults to deep documentation. Depth is also
+a deterministic publication floor, measured on meaningful body characters:
+compact requires 32 characters, standard requires 300 for an index and 800 for
+other pages, and deep requires 600 for an index and 1,200 for other pages.
+Required headings, evidence citations, algorithm facets, and factual audit
+still apply. Page count follows the actual repository shape rather than a fixed
+quota; depth is not permission to repeat the same inventory across many pages.
 
-## Documentation Metrics
+## Page Quality
 
-Use these metrics to decide whether the page is complete enough for the chosen
-density tier. `codocia.md` can prioritize or specialize them per repository.
+A useful implementation page should answer the relevant subset of these
+questions:
 
-- behavior coverage: the page explains behavior that users or agents can
-  observe.
-- operational completeness: the page includes commands, expected output,
-  validation, and recovery steps when relevant.
-- contract precision: the page defines inputs, outputs, config, schemas, APIs,
-  or CLI flags exactly when they are part of the documented surface.
-- maintenance context: the page records ownership, invariants, boundaries, and
-  when prose should not change.
-- agent usability: a coding agent can follow the page without guessing the next
-  inspection, edit, command, or evidence to report.
+- What problem and behavior does this subsystem own?
+- Which callers and entry points use it?
+- What data flows through it, and in what shape?
+- Which algorithm is implemented and why does it work?
+- What state persists across calls, requests, or tokens?
+- Which invariants and transactions prevent corruption?
+- What can fail, and how does failure surface?
+- Which backends or model profiles differ?
+- What is deliberately unsupported?
+- Which tests, fixtures, commands, or independent oracles validate it?
 
-## Anti-Template Rule
+For a file-level entry, write a file contract: ownership, callers, data flow,
+assumptions, failure modes, and evidence. A declaration list or line count is
+not a contract.
 
-Avoid low-information pages that merely list modules, structs, functions, line
-counts, or generic summaries. Those pages can be useful as generated source
-indexes, but they are not sufficient docs and should not replace maintained
-Markdown.
+## Inventory and File Atlas
 
-When a repository asks for file-level docs, write file-level contracts, not
-inventory pages. Explain what the file owns, what callers rely on, how data
-flows through it, which invariants must hold, what can fail, and which tests or
-commands validate the behavior.
+Treat the inventory as an accountability ledger:
 
-If a generated page has no real behavioral detail, do not refresh the snapshot
-as though the docs are complete. Improve the prose or mark it explicitly as an
-index/draft according to the repository policy.
+- every included file needs substantive coverage;
+- every excluded file needs a reason;
+- exclude patterns take precedence over include patterns and cannot re-enable a
+  built-in safety exclusion;
+- tests, build manifests, configuration, scripts, and kernels are first-party
+  evidence when included;
+- existing docs are migration context, not unquestioned truth;
+- the file atlas lists every file and links to deeper pages;
+- the file atlas alone cannot satisfy semantic coverage.
 
-## Maintenance Loop
+Do not claim documentation is complete beyond the recorded scope.
 
-1. Run `codocia check --base main`.
-2. Read `codocia.md` when present.
-3. Classify every reported section:
-   - `broken covers`: fix incorrect globs or stale page ownership.
-   - `missing snapshots`: review the page before creating snapshot metadata.
-   - `stale docs`: compare the Markdown body with the changed source files.
-   - `changed code without docs coverage`: add coverage to an existing concept
-     page or create a real docs page.
-   - `uncovered code files`: treat as inventory, not a reason to bulk-generate
-     shallow pages.
-4. Read every stale docs page and the `git diff review` excerpts reported by
-   the check.
-5. Choose the page's density tier and metric priorities, then update the
-   human-readable Markdown body only when the diff changes documented behavior,
-   public contracts, config, commands, workflows, failure modes, or maintenance
-   guidance.
-6. If a hash changed but the diff is formatting-only, comment-only, test-only,
-   or internal-only, leave the prose unchanged and record that decision in your
-   final response.
-7. Run `codocia snapshot` only after review.
-8. Run `codocia check --base main` again.
+## Managed and Unmanaged Markdown
 
-## Starlight Publishing
+Generated pages declare:
 
-Markdown docs can be used directly as Starlight pages.
+```yaml
+codocia_managed: true
+```
 
-`docs/` remains the source of truth. The generated Starlight site is disposable
-output and can be deleted and regenerated.
+The successful run writes `docs/.codocia-manifest.json`, including the complete
+plan, managed page hashes, source fingerprint, and model.
 
-Use these commands:
+Codocia serializes generation with `.codocia/generate.lock/`. On resume it
+rejects symlinks in the saved run tree and restores any interrupted docs or site
+backup before continuing.
 
-- `codocia site generate`: generate the Starlight project only.
-- `codocia site build`: generate the site, install npm dependencies when
-  `node_modules` is missing, then run the Starlight build.
-- `codocia site serve`: generate the site, install npm dependencies when
-  `node_modules` is missing, then start the Astro dev server.
-- `codocia serve --plain`: serve source Markdown with a small built-in HTTP
-  server when Node/npm is not available. This is not Starlight.
+Existing unmanaged docs are preserved by default. The previous manifest permits
+replacement or retirement only for managed pages whose live hash is unchanged;
+local edits and unmanaged path collisions stop publication. Use
+`--prune-unmanaged` only when the user deliberately wants the newly planned set
+to replace the complete docs tree. Inspect `doc-plan.json` first.
 
-The generated Starlight project should contain:
+Do not manually edit `.codocia-manifest.json`, run artifacts, generated
+Starlight copies, or snapshot hashes to make a failure disappear.
 
-- `src/content/docs/`: Starlight-ready Markdown copies.
-- `public/md/`: raw Markdown copies for direct AI access.
-- `public/llms.txt`: Markdown docs index.
-- `public/llms-full.txt`: concatenated Markdown bundle.
-- `package.json`, `astro.config.mjs`, `src/content.config.ts`, and
-  `tsconfig.json`: local Starlight runtime files.
+## Failure and Resume
 
-When generating Starlight copies, Codocia may sanitize frontmatter so Starlight
-can parse it. It preserves `title` and valid `covers` metadata in the generated
-copy, but it does not rewrite the source Markdown in `docs/`. Raw source
-Markdown remains available under `public/md/`.
+Run artifacts are evidence. Inspect:
 
-## Validation
+```text
+.codocia/runs/<run-id>/
+  upload-scope.json
+  inventory.json
+  doc-plan.json
+  run.json
+  schemas/
+  results/
+  staging/
+  verification*.json
+  audit-*.json
+  backup/
+  failed-publish/
+```
 
-- Run `codocia check --base main` before committing docs.
-- Run `codocia site build` after changing site generation logic.
-- Run `codocia site serve` and request the local URL when changing dev-server
-  behavior.
-- Run `codocia serve --plain` and request the local URL when changing the
-  no-Node fallback server.
-- If the diff is formatting-only, comment-only, test-only, or internal-only,
-  keep prose unchanged and refresh the snapshot after review.
-- A passing snapshot check means file hashes are current; it does not prove the
-  prose is complete. Do not treat a passing `codocia check` as permission to
-  keep bulk-generated, low-information docs.
-- Review whether the chosen density tier matches the change risk and blast
-  radius before committing.
+Use:
 
-## Final Response
+```bash
+codocia generate --resume \
+  --allow-code-upload \
+  --upload-scope-fingerprint 'sha256:<printed-scope-fingerprint>'
+```
 
-When you finish a Codocia docs maintenance task, report:
+Resume selects the latest incomplete run and reuses valid plan or page
+artifacts only when the saved configuration fingerprint matches the current
+goal, audience, depth, model, filters, and publication options. It also checks
+the normalized plan fingerprint and current source fingerprint. If any of
+these changed, start a new generation run by omitting `--resume`.
 
-- docs pages changed;
-- source files or diffs reviewed;
-- whether `docs/.codocia-snapshot.json` changed;
-- validation commands and their results;
-- snapshot-only decisions and the reason;
-- remaining docs gaps or intentionally deferred coverage.
+## Deterministic Verification
+
+Before publication, require all of these to pass:
+
+- valid inventory and plan contracts;
+- unchanged source fingerprint;
+- every planned page exists;
+- exact managed flag and covers metadata;
+- all included files have substantive coverage;
+- no empty, tiny, or placeholder body;
+- relative, site-root, and Markdown heading-fragment links resolve;
+- the factual audit has `approved: true` and no blocking issue.
+
+After publication, Codocia runs snapshot and check, then a requested Starlight
+build. If any of these steps fails, publication is rolled back. A clean
+snapshot proves freshness only; the prior verification and audit establish the
+stronger generation gate.
+
+## Ongoing Maintenance
+
+For a small later change, the deterministic maintenance loop remains valid:
+
+```bash
+codocia check --base main
+# inspect source and docs, update prose if behavior changed
+codocia snapshot
+codocia check --base main
+```
+
+The former `goal` and `agent codex` paths are disabled because they bypassed
+generation's acknowledgement, mirror, and transactional publisher. Use
+`generate` with a focused goal when Codex authoring is required.
+
+## Site Output
+
+The current site path remains Starlight:
+
+```bash
+codocia site generate
+codocia site build
+codocia site serve
+codocia serve --plain
+```
+
+Do not edit `.codocia/starlight` as the documentation source. Change Markdown
+under `docs/` and regenerate. `--site` on `generate` performs the Starlight
+build after docs, snapshot, and check pass; a site failure restores both the
+previous docs and previous site trees.
+
+Treat site inputs as inert data: managed pages must be `.md`, not MDX; SVG, raw
+HTML, dangerous URL schemes, cross-root relative links, and symbolic links are
+rejected. Keep the output inside the workspace and disjoint from `docs/`.
+Default build/serve performs a clean exact dependency install with lifecycle
+scripts disabled; use `--skip-install` only when intentionally trusting the
+existing real `node_modules` tree. Site output is assembled from scratch in a
+unique staging directory and may replace only an empty or Codocia-owned output;
+never preserve old Astro source, npm config, shrinkwrap, or `dist`. The plain
+fallback may serve only symlink-free `.md` files inside the workspace.
+
+## Final Report
+
+Report:
+
+- the run directory and whether it was new or resumed;
+- the exact upload scope artifact and selected path count;
+- included and excluded inventory counts;
+- generated and preserved docs pages;
+- whether unmanaged docs were pruned;
+- deterministic verification and factual audit results;
+- snapshot, check, and optional site results;
+- any remaining warning or intentionally excluded scope;
+- confirmation that Codocia did not commit, push, or deploy.

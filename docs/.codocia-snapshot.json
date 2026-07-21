@@ -1,38 +1,72 @@
 {
-  "commit": "a805b06119a87bc1a66e3dcc15392187b8a28e1e",
+  "schema_version": 1,
+  "hash_algorithm": "sha256",
+  "commit": "1b445ff917dba9cd1128941d2fa5f223930c16f8",
   "docs": {
     "docs/agent-workflow.md": {
-      "covers": ["SKILL.md", "codocia.md", "src/lib.rs"],
+      "covers": [
+        "SKILL.md",
+        "codocia.md",
+        "src/codex_runner.rs",
+        "src/generate.rs"
+      ],
       "files": {
-        "SKILL.md": "4f2d3f8e8a453f47",
-        "codocia.md": "87f52c62ee8568a3",
-        "src/lib.rs": "36b469dda75b06f0"
+        "SKILL.md": "sha256:a028b8b3b2fdb5921edab2ce8ed0a19c4add000648cf996e9e4146270bfd3d74",
+        "codocia.md": "sha256:1c7667642302677653d230ea61b98e044971b9c95874fe73abdbfb5d4522b068",
+        "src/codex_runner.rs": "sha256:395a2473c9dbd11c0c9514fbad9041af932b3d6126d89ae47de8f479b2aa2fb2",
+        "src/generate.rs": "sha256:00b44c0810bce3cccdaeaf36bd9e3ac700ef18d32ca8fc989ac7f33f2582e2dc"
       }
     },
     "docs/cli.md": {
-      "covers": ["src/main.rs"],
+      "covers": [
+        "src/main.rs"
+      ],
       "files": {
-        "src/main.rs": "c96f04bba8461e7f"
+        "src/main.rs": "sha256:beac895aec674f7032615936dd6f010af3cb65f03440b5532ac2cb301df1f8d7"
       }
     },
     "docs/configuration.md": {
-      "covers": ["src/lib.rs"],
+      "covers": [
+        "src/main.rs",
+        "src/generation_model.rs",
+        "src/inventory.rs"
+      ],
       "files": {
-        "src/lib.rs": "36b469dda75b06f0"
+        "src/generation_model.rs": "sha256:2c010db0215af189739398fbce1105eb5e42b915518769b2367165d3c1de516f",
+        "src/inventory.rs": "sha256:3bd62751b6a88a4458173b60244326836f3808c96f3d087c2adaf7e5d54f16c1",
+        "src/main.rs": "sha256:beac895aec674f7032615936dd6f010af3cb65f03440b5532ac2cb301df1f8d7"
       }
     },
     "docs/distribution.md": {
-      "covers": ["npm/scripts/install.js", "npm/scripts/install.test.js", "homebrew-tap-template/Formula/codocia.rb"],
+      "covers": [
+        "npm/scripts/install.js",
+        "npm/scripts/install.test.js",
+        "homebrew-tap-template/Formula/codocia.rb"
+      ],
       "files": {
-        "homebrew-tap-template/Formula/codocia.rb": "fa46d16f5c776432",
-        "npm/scripts/install.js": "48704294a012bfd9",
-        "npm/scripts/install.test.js": "4b7c83035ea4b502"
+        "homebrew-tap-template/Formula/codocia.rb": "sha256:5ae5739e01a75492369f8b0baee4a81a98a2a54a770273237243a116ee69e2b8",
+        "npm/scripts/install.js": "sha256:51baa2d7b71ed3c86e3cede0201a9e9893c56554edacf59383971a0a73a39058",
+        "npm/scripts/install.test.js": "sha256:3049ded88a06e6a93416735b8eeb8f82feb2d48a0851b5180895824e8a8d1174"
       }
     },
     "docs/library.md": {
-      "covers": ["src/lib.rs"],
+      "covers": [
+        "src/lib.rs",
+        "src/codex_runner.rs",
+        "src/generate.rs",
+        "src/generation_model.rs",
+        "src/generation_verify.rs",
+        "src/integrity.rs",
+        "src/inventory.rs"
+      ],
       "files": {
-        "src/lib.rs": "36b469dda75b06f0"
+        "src/codex_runner.rs": "sha256:395a2473c9dbd11c0c9514fbad9041af932b3d6126d89ae47de8f479b2aa2fb2",
+        "src/generate.rs": "sha256:00b44c0810bce3cccdaeaf36bd9e3ac700ef18d32ca8fc989ac7f33f2582e2dc",
+        "src/generation_model.rs": "sha256:2c010db0215af189739398fbce1105eb5e42b915518769b2367165d3c1de516f",
+        "src/generation_verify.rs": "sha256:a1239aa31ad5ea1359a3d5d67c52f93ce63006f4b738ed51d97d1c949d688988",
+        "src/integrity.rs": "sha256:95aea61f73ae88453fa511ae7b22b5a1747437df1c4ce418845fbf56c7f25e38",
+        "src/inventory.rs": "sha256:3bd62751b6a88a4458173b60244326836f3808c96f3d087c2adaf7e5d54f16c1",
+        "src/lib.rs": "sha256:4f0b5273ebb6455f3ac566aed4ffcb8df93821bfe2ec9398907b52f1b8fa6c84"
       }
     }
   }

@@ -27,6 +27,12 @@ Tagged releases build precompiled binaries for:
 - `aarch64-unknown-linux-gnu`
 - `x86_64-pc-windows-msvc`
 
+These targets describe binary distribution, not generation-platform parity.
+The OS-enforced boundary for `codocia generate` currently exists only on macOS;
+generation fails closed on Linux and Windows. The retained snapshot, check,
+site, and other non-generation commands remain available where their own
+runtime dependencies are satisfied.
+
 Unix archives contain a `codocia` binary in a `.tar.gz` file. Windows archives
 contain `codocia.exe` in a `.zip` file. The release also publishes
 `checksums.txt`, which downstream installers use to verify downloads.

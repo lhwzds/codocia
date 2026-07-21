@@ -1,7 +1,7 @@
 class Codocia < Formula
-  desc "Documentation drift checker for AI coding agents"
+  desc "One-command, source-grounded documentation generation with Codex"
   homepage "https://github.com/lhwzds/codocia"
-  version "0.1.2"
+  version "0.2.0"
   license "MIT"
 
   on_macos do
@@ -28,7 +28,19 @@ class Codocia < Formula
     bin.install "codocia"
   end
 
+  def caveats
+    return "" unless OS.linux?
+
+    <<~EOS
+      Codex-backed `codocia generate` currently requires macOS and fails closed
+      on Linux. This package still supports retained non-generation commands,
+      including init, snapshot, check, site, serve, and skill.
+    EOS
+  end
+
   test do
-    assert_match "Codocia Docs Skill", shell_output("#{bin}/codocia skill")
+    output = shell_output("#{bin}/codocia generate --help")
+    assert_match "Generate a complete managed Markdown documentation system", output
+    assert_match "--allow-code-upload", output
   end
 end
