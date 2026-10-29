@@ -12,8 +12,14 @@ what it is, how one request or job flows through it, where each core module
 lives, and why the important designs are the way they are. Concision is the
 first quality bar:
 
-- Explain structure, function, and design; skip what code navigation already
-  shows (argument lists, every class, every flag).
+- Codocia owns the structure; you own the explanation. Every build
+  regenerates a `structure` appendix from the code: areas, their own
+  descriptions, hub files (most imported), import dependencies between
+  areas, and which pages cite each area. Do not write directory tables, file
+  lists, or module maps in notes; link `[[structure]]` instead.
+- Explain function and design: how a request or job flows, why it is built
+  this way, what breaks. Skip what code navigation already shows (argument
+  lists, every class, every flag).
 - One page per functional area, not per file or directory. Default budget:
   8 pages, 900 words per page, 180 words per note. A "word" is one Latin
   word or two CJK characters; fenced code and diagrams are not counted, so
@@ -33,6 +39,7 @@ codocia init --repo <repo> --book <book-dir> --lang zh   # book outside the repo
 cd <book-dir>
 # edit book.md: pages (the outline), ignore (out-of-scope globs), intro text
 codocia status            # pages, budgets, coverage map of the repo's areas
+codocia map               # generated structure: areas, hub files, dependencies
 codocia history           # hot files, structural commits, design-shaping commits
 # loop: read code -> add a note -> status
 codocia note add --page runtime --id request-flow --title "一个请求的完整链路" \
@@ -47,7 +54,8 @@ codocia build             # out/index.md, out/NN-page.md, out/all.md
 1. **Scope first.** Run `status` once, then put tests, benchmarks, examples,
    vendored code, and generated files in `ignore`. The coverage map then shows
    only what the docs should explain.
-2. **Outline second.** Choose ≤8 pages in `book.md` from the coverage map,
+2. **Outline second.** Read `codocia map` to see the areas, their hub files,
+   and how they depend on each other. Choose ≤8 pages in `book.md` from it,
    ordered for reading: overview → runtime flow → core subsystems → extension
    points → history and design decisions.
 3. **Notes.** Read the code for one question at a time, then save a note.

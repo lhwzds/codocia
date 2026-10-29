@@ -1,0 +1,842 @@
+//! Deterministic code structure: areas, their own one-line descriptions,
+//! dependencies between areas, and which pages explain them.
+//!
+//! None of this is written by the agent. It is recomputed from the
+//! repository on every build, so it cannot drift from the code.
+
+use crate::book::{Book, Bucket, BucketKind, EvidenceRef, Inventory, Note};
+use anyhow::Result;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fs;
+use std::path::Path;
+
+/// Reserved page slug for the generated structure appendix.
+pub const STRUCTURE_SLUG: &str = "structure";
+const MAX_EDGES: usize = 24;
+
+pub struct Area {
+    pub bucket: Bucket,
+    pub summary: Option<String>,
+    /// Hub files: most imported from anywhere, then largest.
+    pub key_files: Vec<String>,
+    /// (page slug, number of notes on that page citing the area)
+    pub pages: Vec<(String, usize)>,
+}
+
+pub struct StructureMap {
+    pub areas: Vec<Area>,
+    /// (from area, to area, number of file-level imports)
+    pub edges: Vec<(usize, usize, usize)>,
+    pub total_lines: usize,
+    pub total_files: usize,
+}
+
+pub fn build_map(book: &Book, notes: &[Note], max_areas: usize) -> Result<StructureMap> {
+    let repo = book.repo_path();
+    let inventory = Inventory::scan(&repo, &book.ignore)?;
+    let mut buckets = inventory.buckets(max_areas);
+    buckets.sort_by(|a, b| a.dir.cmp(&b.dir).then(a.label().cmp(&b.label())));
+
+    let area_of = |path: &str| buckets.iter().position(|b| b.contains(path));
+    let files: Vec<&String> = inventory.files.keys().collect();
+    let file_edges = import_edges(&repo, &files);
+    let mut fan_in: HashMap<&str, usize> = HashMap::new();
+    for (_, to) in &file_edges {
+        *fan_in.entry(to).or_default() += 1;
+    }
+    let mut areas: Vec<Area> = buckets
+        .iter()
+        .map(|bucket| {
+            // Hub files: most imported first, then largest.
+            let mut members: Vec<(&String, usize, usize)> = inventory
+                .files
+                .iter()
+                .filter(|(path, _)| bucket.contains(path) && is_code_file(path))
+                .map(|(path, lines)| {
+                    (
+                        path,
+                        fan_in.get(path.as_str()).copied().unwrap_or(0),
+                        *lines,
+                    )
+                })
+                .collect();
+            members.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)).then(a.0.cmp(b.0)));
+            Area {
+                bucket: bucket.clone(),
+                summary: area_summary(&repo, &bucket.dir),
+                key_files: members
+                    .iter()
+                    .take(3)
+                    .map(|(path, _, _)| {
+                        path.strip_prefix(&format!("{}/", bucket.dir))
+                            .unwrap_or(path)
+                            .to_string()
+                    })
+                    .collect(),
+                pages: Vec::new(),
+            }
+        })
+        .collect();
+
+    // Which pages explain which area, from note evidence.
+    let mut cited: BTreeMap<(usize, String), BTreeSet<String>> = BTreeMap::new();
+    for note in notes {
+        for item in &note.evidence {
+            if let EvidenceRef::File { path, .. } = &item.target
+                && let Some(area) = area_of(path)
+            {
+                cited
+                    .entry((area, note.page.clone()))
+                    .or_default()
+                    .insert(note.id.clone());
+            }
+        }
+    }
+    for ((area, page), ids) in cited {
+        areas[area].pages.push((page, ids.len()));
+    }
+    let order: HashMap<&str, usize> = book
+        .pages
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.slug.as_str(), i))
+        .collect();
+    for area in &mut areas {
+        area.pages
+            .sort_by_key(|(slug, _)| order.get(slug.as_str()).copied().unwrap_or(usize::MAX));
+    }
+
+    let mut counts: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    for (from, to) in file_edges {
+        if let (Some(a), Some(b)) = (area_of(from), area_of(to))
+            && a != b
+        {
+            *counts.entry((a, b)).or_default() += 1;
+        }
+    }
+    let mut edges: Vec<(usize, usize, usize)> =
+        counts.into_iter().map(|((a, b), n)| (a, b, n)).collect();
+    edges.sort_by(|x, y| y.2.cmp(&x.2).then((x.0, x.1).cmp(&(y.0, y.1))));
+
+    Ok(StructureMap {
+        total_lines: inventory.total_lines,
+        total_files: inventory.files.len(),
+        areas,
+        edges,
+    })
+}
+
+/// Renders the map as Markdown. `page_link` turns a page slug into a link.
+pub fn render(book: &Book, map: &StructureMap, page_link: impl Fn(&str) -> String) -> String {
+    let zh = book.lang == "zh";
+    let mut out = String::new();
+    out.push_str(if zh {
+        "本页由 Codocia 根据代码自动生成，每次 build 重新计算：功能区划分、各区自带的说明、区之间的 import 依赖，以及哪一页讲了它。\n\n"
+    } else {
+        "Generated by Codocia from the code on every build: areas, each area's own description, import dependencies between areas, and the pages that explain them.\n\n"
+    });
+    out.push_str(&format!(
+        "{} {} {}, {} {}{}\n\n",
+        if zh { "范围内共" } else { "In scope:" },
+        map.total_files,
+        if zh { "个文件" } else { "files" },
+        thousands(map.total_lines),
+        if zh { "行" } else { "lines" },
+        if book.ignore.is_empty() {
+            String::new()
+        } else if zh {
+            format!("；已排除 `{}`", book.ignore.join("`, `"))
+        } else {
+            format!("; excluded `{}`", book.ignore.join("`, `"))
+        }
+    ));
+
+    out.push_str(&format!("## {}\n\n", if zh { "文件结构" } else { "Files" }));
+    // Group areas under their parent directory so the list reads as a tree.
+    let mut groups: BTreeMap<String, Vec<&Area>> = BTreeMap::new();
+    for area in &map.areas {
+        let key = match area.bucket.kind {
+            BucketKind::Whole => area
+                .bucket
+                .dir
+                .rsplit_once('/')
+                .map(|(parent, _)| parent.to_string())
+                .unwrap_or_default(),
+            BucketKind::Files | BucketKind::Rest => area.bucket.dir.clone(),
+        };
+        groups.entry(key).or_default().push(area);
+    }
+    for (parent, areas) in &groups {
+        if parent.is_empty() {
+            out.push_str(&format!(
+                "**{}**\n\n",
+                if zh {
+                    "仓库根目录"
+                } else {
+                    "Repository root"
+                }
+            ));
+        } else {
+            out.push_str(&format!("**`{parent}/`**\n\n"));
+        }
+        for area in areas {
+            let name = match area.bucket.kind {
+                BucketKind::Whole => format!(
+                    "`{}/`",
+                    area.bucket
+                        .dir
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(&area.bucket.dir)
+                ),
+                BucketKind::Files => (if zh { "（直接文件）" } else { "(files)" }).to_string(),
+                BucketKind::Rest => (if zh {
+                    "（其余子目录）"
+                } else {
+                    "(other)"
+                })
+                .to_string(),
+            };
+            let mut line = format!(
+                "- {name} — {} {}，{} {}",
+                thousands(area.bucket.lines),
+                if zh { "行" } else { "lines" },
+                thousands(area.bucket.files),
+                if zh { "个文件" } else { "files" }
+            );
+            if !zh {
+                line = line.replace('，', ", ");
+            }
+            if let Some(summary) = &area.summary {
+                line.push_str(&format!("{}{summary}", if zh { "。" } else { ". " }));
+            }
+            if !area.key_files.is_empty() {
+                line.push_str(&format!(
+                    "\\\n  {}{}",
+                    if zh { "核心文件：" } else { "Hub files: " },
+                    area.key_files
+                        .iter()
+                        .map(|f| format!("`{f}`"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ));
+            }
+            line.push_str(&format!(
+                "\\\n  {}{}",
+                if zh { "讲解：" } else { "Explained in: " },
+                if area.pages.is_empty() {
+                    (if zh { "未讲解" } else { "not covered" }).to_string()
+                } else {
+                    area.pages
+                        .iter()
+                        .map(|(slug, n)| format!("{} ({n})", page_link(slug)))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
+            ));
+            out.push_str(&line);
+            out.push('\n');
+        }
+        out.push('\n');
+    }
+
+    if !map.edges.is_empty() {
+        let shown: Vec<&(usize, usize, usize)> = map.edges.iter().take(MAX_EDGES).collect();
+        out.push_str(&format!(
+            "\n## {}\n\n",
+            if zh { "依赖结构" } else { "Dependencies" }
+        ));
+        out.push_str(&if zh {
+            format!(
+                "箭头 A → B 表示 A 中有文件 import 了 B，数字是这样的文件级 import 数。只画最强的 {} 条（共 {} 条）。\n\n",
+                shown.len(),
+                map.edges.len()
+            )
+        } else {
+            format!(
+                "A → B means files in A import B; the number counts file-level imports. Showing the strongest {} of {} edges.\n\n",
+                shown.len(),
+                map.edges.len()
+            )
+        });
+        let mut used: BTreeSet<usize> = BTreeSet::new();
+        for (a, b, _) in &shown {
+            used.insert(*a);
+            used.insert(*b);
+        }
+        out.push_str("```mermaid\nflowchart LR\n");
+        for index in &used {
+            out.push_str(&format!(
+                "  a{index}[\"{}\"]\n",
+                map.areas[*index].bucket.label().replace('"', "'")
+            ));
+        }
+        for (a, b, n) in &shown {
+            out.push_str(&format!("  a{a} -->|{n}| a{b}\n"));
+        }
+        out.push_str("```\n");
+    }
+    out
+}
+
+fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn is_code_file(path: &str) -> bool {
+    const CODE: &[&str] = &[
+        "py", "rs", "go", "ts", "tsx", "js", "jsx", "mjs", "c", "cc", "cpp", "cu", "cuh", "h",
+        "hpp", "java", "kt", "swift", "rb", "php", "scala", "proto", "sh", "zig", "lua",
+    ];
+    path.rsplit_once('.')
+        .is_some_and(|(_, ext)| CODE.contains(&ext.to_ascii_lowercase().as_str()))
+}
+
+/// A one-line description an area gives itself: package metadata, README,
+/// Python package docstring, or Rust `//!` comment.
+fn area_summary(repo: &Path, dir: &str) -> Option<String> {
+    let base = repo.join(dir);
+    let read = |name: &str| fs::read_to_string(base.join(name)).ok();
+    let found = read("Cargo.toml")
+        .and_then(|t| quoted_field(&t, "description"))
+        .or_else(|| read("package.json").and_then(|t| quoted_field(&t, "\"description\"")))
+        .or_else(|| read("README.md").and_then(|t| readme_line(&t)))
+        .or_else(|| read("__init__.py").and_then(|t| docstring_line(&t)))
+        .or_else(|| {
+            ["lib.rs", "mod.rs", "src/lib.rs", "src/main.rs"]
+                .iter()
+                .find_map(|f| read(f).and_then(|t| rust_doc_line(&t)))
+        })?;
+    let line: String = found.chars().take(90).collect();
+    Some(if line.chars().count() < found.chars().count() {
+        format!("{line}…")
+    } else {
+        line
+    })
+}
+
+fn quoted_field(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let rest = line.trim().strip_prefix(key)?.trim_start();
+        let rest = rest.strip_prefix('=').or_else(|| rest.strip_prefix(':'))?;
+        let value = rest.trim().trim_end_matches(',').trim_matches('"').trim();
+        (!value.is_empty()).then(|| value.to_string())
+    })
+}
+
+fn readme_line(text: &str) -> Option<String> {
+    let mut in_fence = false;
+    let mut paragraph: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if line.is_empty() {
+            if !paragraph.is_empty() {
+                break;
+            }
+            continue;
+        }
+        let skip = line.starts_with('#')
+            || line.starts_with('<')
+            || line.starts_with("![")
+            || line.starts_with("[!")
+            || line.starts_with('|')
+            || line.starts_with("---")
+            || line.starts_with('>')
+            || line.starts_with("- ")
+            || line.starts_with("* ")
+            || line
+                .split_once(". ")
+                .is_some_and(|(n, _)| n.chars().all(|c| c.is_ascii_digit()));
+        if skip {
+            if !paragraph.is_empty() {
+                break;
+            }
+            continue;
+        }
+        paragraph.push(line);
+    }
+    (!paragraph.is_empty()).then(|| first_sentence(&strip_markdown(&paragraph.join(" "))))
+}
+
+/// The first sentence of a paragraph, so summaries stay one line.
+fn first_sentence(text: &str) -> String {
+    for (i, c) in text.char_indices() {
+        let end = i + c.len_utf8();
+        let next = text[end..].chars().next();
+        if (c == '.' && next.is_none_or(char::is_whitespace)) || c == '。' {
+            return text[..end].to_string();
+        }
+    }
+    text.to_string()
+}
+
+fn docstring_line(text: &str) -> Option<String> {
+    let rest = text
+        .lines()
+        .map(str::trim)
+        .skip_while(|l| l.is_empty() || l.starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let body = rest
+        .strip_prefix("\"\"\"")
+        .or_else(|| rest.strip_prefix("'''"))?;
+    let body = body.split("\"\"\"").next().unwrap_or(body);
+    let paragraph: Vec<&str> = body
+        .lines()
+        .map(str::trim)
+        .skip_while(|l| l.is_empty())
+        .take_while(|l| !l.is_empty())
+        .collect();
+    (!paragraph.is_empty()).then(|| first_sentence(&paragraph.join(" ")))
+}
+
+fn rust_doc_line(text: &str) -> Option<String> {
+    let paragraph: Vec<String> = text
+        .lines()
+        .map(str::trim)
+        .filter_map(|l| l.strip_prefix("//!"))
+        .map(|l| l.trim().to_string())
+        .skip_while(|l| l.is_empty() || l.starts_with('#'))
+        .take_while(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+    (!paragraph.is_empty()).then(|| first_sentence(&strip_markdown(&paragraph.join(" "))))
+}
+
+fn strip_markdown(line: &str) -> String {
+    let mut out = String::new();
+    let mut rest = line;
+    // [text](url) -> text
+    while let Some(start) = rest.find('[') {
+        let Some(mid) = rest[start..].find("](") else {
+            break;
+        };
+        let Some(end) = rest[start + mid..].find(')') else {
+            break;
+        };
+        out.push_str(&rest[..start]);
+        out.push_str(&rest[start + 1..start + mid]);
+        rest = &rest[start + mid + end + 1..];
+    }
+    out.push_str(rest);
+    out.replace("**", "").trim().to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Import graph
+
+/// File-level import edges for Python, Rust, and JS/TS sources.
+pub fn import_edges<'a>(repo: &Path, files: &[&'a String]) -> Vec<(&'a str, &'a str)> {
+    let python = PythonIndex::new(files);
+    let rust = RustIndex::new(repo, files);
+    let known: BTreeSet<&str> = files.iter().map(|f| f.as_str()).collect();
+    let mut edges = Vec::new();
+    for file in files {
+        let path = file.as_str();
+        let Some(ext) = path.rsplit_once('.').map(|(_, e)| e) else {
+            continue;
+        };
+        if !matches!(ext, "py" | "rs" | "ts" | "tsx" | "js" | "jsx" | "mjs") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(repo.join(path)) else {
+            continue;
+        };
+        let mut targets: BTreeSet<&str> = BTreeSet::new();
+        match ext {
+            "py" => {
+                for module in python_imports(&text, path) {
+                    if let Some(target) = python.resolve(&module) {
+                        targets.insert(target);
+                    }
+                }
+            }
+            "rs" => {
+                for target in rust.resolve_all(&text, path) {
+                    targets.insert(target);
+                }
+            }
+            _ => {
+                for spec in js_imports(&text) {
+                    if let Some(target) = resolve_js(path, &spec, &known) {
+                        targets.insert(target);
+                    }
+                }
+            }
+        }
+        for target in targets {
+            if target != path {
+                edges.push((path, target));
+            }
+        }
+    }
+    edges
+}
+
+struct PythonIndex<'a> {
+    /// Dotted module suffix -> file; `None` when ambiguous.
+    modules: HashMap<String, Option<&'a str>>,
+}
+
+impl<'a> PythonIndex<'a> {
+    fn new(files: &[&'a String]) -> Self {
+        let mut modules: HashMap<String, Option<&'a str>> = HashMap::new();
+        for file in files {
+            let Some(stem) = file.strip_suffix(".py") else {
+                continue;
+            };
+            let mut parts: Vec<&str> = stem.split('/').collect();
+            if parts.last() == Some(&"__init__") {
+                parts.pop();
+            }
+            for start in 0..parts.len() {
+                let key = parts[start..].join(".");
+                modules
+                    .entry(key)
+                    .and_modify(|v| {
+                        if *v != Some(file.as_str()) {
+                            *v = None;
+                        }
+                    })
+                    .or_insert(Some(file.as_str()));
+            }
+        }
+        Self { modules }
+    }
+
+    /// Longest dotted prefix of `module` that names exactly one file.
+    fn resolve(&self, module: &str) -> Option<&'a str> {
+        let parts: Vec<&str> = module.split('.').collect();
+        for end in (2..=parts.len()).rev() {
+            if let Some(found) = self.modules.get(&parts[..end].join(".")) {
+                return *found;
+            }
+        }
+        None
+    }
+}
+
+/// Imported module names, with relative imports made absolute by path.
+fn python_imports(text: &str, path: &str) -> Vec<String> {
+    let mut package: Vec<&str> = path.trim_end_matches(".py").split('/').collect();
+    package.pop();
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim_start();
+        if let Some(rest) = line.strip_prefix("from ") {
+            let Some((module, names)) = rest.split_once(" import ") else {
+                continue;
+            };
+            let module = module.trim();
+            let dots = module.chars().take_while(|c| *c == '.').count();
+            let base = if dots > 0 {
+                if dots - 1 > package.len() {
+                    continue;
+                }
+                let mut parts = package[..package.len() - (dots - 1)].to_vec();
+                let tail = &module[dots..];
+                if !tail.is_empty() {
+                    parts.extend(tail.split('.'));
+                }
+                parts.join(".")
+            } else {
+                module.to_string()
+            };
+            // `from pkg import sub` may import a submodule.
+            for name in names.trim_start_matches('(').split(',') {
+                let name = name.split_whitespace().next().unwrap_or("");
+                if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !name.is_empty() {
+                    out.push(format!("{base}.{name}"));
+                }
+            }
+            out.push(base);
+        } else if let Some(rest) = line.strip_prefix("import ") {
+            for item in rest.split(',') {
+                if let Some(module) = item.split_whitespace().next() {
+                    out.push(module.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+struct RustIndex<'a> {
+    /// Crate name (underscored) -> crate directory.
+    crates: HashMap<String, String>,
+    files: BTreeSet<&'a str>,
+}
+
+impl<'a> RustIndex<'a> {
+    fn new(repo: &Path, files: &[&'a String]) -> Self {
+        let mut crates = HashMap::new();
+        for file in files {
+            if let Some(dir) = file.strip_suffix("Cargo.toml") {
+                let dir = dir.trim_end_matches('/').to_string();
+                if let Ok(text) = fs::read_to_string(repo.join(file.as_str()))
+                    && let Some(name) = cargo_package_name(&text)
+                {
+                    crates.insert(name.replace('-', "_"), dir);
+                }
+            }
+        }
+        Self {
+            crates,
+            files: files.iter().map(|f| f.as_str()).collect(),
+        }
+    }
+
+    fn crate_dir(&self, path: &str) -> Option<&str> {
+        self.crates
+            .values()
+            .filter(|dir| dir.is_empty() || path.starts_with(&format!("{dir}/")))
+            .max_by_key(|dir| dir.len())
+            .map(String::as_str)
+    }
+
+    fn module_file(&self, src: &str, parts: &[&str]) -> Option<&'a str> {
+        for end in (1..=parts.len()).rev() {
+            let stem = format!("{src}/{}", parts[..end].join("/"));
+            for candidate in [format!("{stem}.rs"), format!("{stem}/mod.rs")] {
+                if let Some(found) = self.files.get(candidate.as_str()) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+
+    fn resolve_all(&self, text: &str, path: &str) -> Vec<&'a str> {
+        let mut out = Vec::new();
+        let crate_dir = self.crate_dir(path);
+        let src = crate_dir.map(|d| {
+            if d.is_empty() {
+                "src".to_string()
+            } else {
+                format!("{d}/src")
+            }
+        });
+        for line in text.lines() {
+            let line = line.trim_start();
+            let Some(rest) = line
+                .strip_prefix("pub use ")
+                .or_else(|| line.strip_prefix("use "))
+            else {
+                continue;
+            };
+            let parts: Vec<&str> = rest
+                .split("::")
+                .map(|p| p.trim_end_matches(';').trim())
+                .take_while(|p| p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+                .collect();
+            let Some(first) = parts.first() else { continue };
+            let found = match *first {
+                "crate" => src
+                    .as_deref()
+                    .and_then(|s| self.module_file(s, &parts[1..])),
+                "super" | "self" => {
+                    let dir = path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+                    let dir = if *first == "super" && !path.ends_with("/mod.rs") {
+                        dir.to_string()
+                    } else if *first == "super" {
+                        dir.rsplit_once('/')
+                            .map(|(d, _)| d)
+                            .unwrap_or("")
+                            .to_string()
+                    } else {
+                        dir.to_string()
+                    };
+                    self.module_file(&dir, &parts[1..])
+                }
+                name => self.crates.get(name).and_then(|dir| {
+                    let src = if dir.is_empty() {
+                        "src".to_string()
+                    } else {
+                        format!("{dir}/src")
+                    };
+                    self.module_file(&src, &parts[1..])
+                        .or_else(|| self.files.get(format!("{src}/lib.rs").as_str()).copied())
+                }),
+            };
+            if let Some(found) = found {
+                out.push(found);
+            }
+        }
+        out
+    }
+}
+
+fn cargo_package_name(text: &str) -> Option<String> {
+    let mut in_package = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_package = line == "[package]";
+            continue;
+        }
+        if in_package && let Some(value) = quoted_field(line, "name") {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn js_imports(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        for marker in [
+            " from '",
+            " from \"",
+            "require('",
+            "require(\"",
+            "import('",
+            "import(\"",
+        ] {
+            if let Some(start) = line.find(marker) {
+                let rest = &line[start + marker.len()..];
+                if let Some(end) = rest.find(['\'', '"']) {
+                    out.push(rest[..end].to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+fn resolve_js<'a>(path: &str, spec: &str, known: &BTreeSet<&'a str>) -> Option<&'a str> {
+    if !spec.starts_with('.') {
+        return None;
+    }
+    let mut parts: Vec<&str> = path.split('/').collect();
+    parts.pop();
+    for segment in spec.split('/') {
+        match segment {
+            "." | "" => {}
+            ".." => {
+                parts.pop()?;
+            }
+            other => parts.push(other),
+        }
+    }
+    let base = parts.join("/");
+    for suffix in [
+        "",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        "/index.ts",
+        "/index.tsx",
+        "/index.js",
+    ] {
+        if let Some(found) = known.get(format!("{base}{suffix}").as_str()) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn python_imports_resolve_absolute_and_relative() {
+        let files: Vec<String> = [
+            "python/pkg/__init__.py",
+            "python/pkg/core/engine.py",
+            "python/pkg/core/__init__.py",
+            "python/pkg/api/server.py",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let refs: Vec<&String> = files.iter().collect();
+        let index = PythonIndex::new(&refs);
+        let imports = python_imports(
+            "from pkg.core.engine import run\nfrom ..core import engine\nimport os\n",
+            "python/pkg/api/server.py",
+        );
+        let resolved: BTreeSet<&str> = imports.iter().filter_map(|m| index.resolve(m)).collect();
+        assert!(
+            resolved.contains("python/pkg/core/engine.py"),
+            "{resolved:?}"
+        );
+        assert!(!resolved.iter().any(|f| f.contains("os")));
+    }
+
+    #[test]
+    fn rust_and_js_imports_resolve() {
+        let dir = std::env::temp_dir().join(format!("codocia-structure-{}", std::process::id()));
+        fs::create_dir_all(dir.join("gw/src/core")).unwrap();
+        fs::write(dir.join("gw/Cargo.toml"), "[package]\nname = \"my-gw\"\n").unwrap();
+        let files: Vec<String> = [
+            "gw/Cargo.toml",
+            "gw/src/lib.rs",
+            "gw/src/core/worker.rs",
+            "gw/src/server.rs",
+            "web/src/app.ts",
+            "web/src/util/index.ts",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let refs: Vec<&String> = files.iter().collect();
+        let rust = RustIndex::new(&dir, &refs);
+        let found = rust.resolve_all("use crate::core::worker::Worker;\n", "gw/src/server.rs");
+        assert_eq!(found, vec!["gw/src/core/worker.rs"]);
+        let found = rust.resolve_all("use my_gw::Thing;\n", "other/src/main.rs");
+        assert_eq!(found, vec!["gw/src/lib.rs"]);
+        let known: BTreeSet<&str> = files.iter().map(|s| s.as_str()).collect();
+        assert_eq!(
+            resolve_js("web/src/app.ts", "./util", &known),
+            Some("web/src/util/index.ts")
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn formats_counts_and_code_files() {
+        assert_eq!(thousands(2241725), "2,241,725");
+        assert_eq!(thousands(876), "876");
+        assert!(is_code_file("a/b.py"));
+        assert!(!is_code_file("LICENSE"));
+        assert!(!is_code_file(".gitignore"));
+    }
+
+    #[test]
+    fn summaries_come_from_the_code() {
+        assert_eq!(
+            readme_line("# T\n\n<img>\n\nA [fast](x)\nrouter. More.\n").as_deref(),
+            Some("A fast router.")
+        );
+        assert_eq!(readme_line("# T\n\n- `a/`: list\n").as_deref(), None);
+        assert_eq!(
+            docstring_line("# c\n\"\"\"Memory pools.\n\nMore.\"\"\"\n").as_deref(),
+            Some("Memory pools.")
+        );
+        assert_eq!(
+            rust_doc_line("//! # Title\n//! Routes requests.\n").as_deref(),
+            Some("Routes requests.")
+        );
+        assert_eq!(
+            quoted_field("description = \"Kernels\"", "description").as_deref(),
+            Some("Kernels")
+        );
+    }
+}

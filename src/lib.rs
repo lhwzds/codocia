@@ -1,6 +1,7 @@
 //! Library API for Codocia.
 
 pub mod book;
+pub mod structure;
 
 use anyhow::{Context, Result, bail};
 use std::collections::{BTreeMap, BTreeSet};

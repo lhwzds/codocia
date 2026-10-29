@@ -5,6 +5,7 @@
 //! it learned as notes with evidence, and Codocia pins that evidence, tracks
 //! coverage and budgets, and compiles the notes into Markdown.
 
+use crate::structure::{self, STRUCTURE_SLUG};
 use crate::{current_commit, glob_matches, stable_hash_hex, write_file};
 use anyhow::{Context, Result, bail};
 use std::collections::{BTreeMap, BTreeSet};
@@ -425,7 +426,7 @@ pub fn note_add(options: &NoteAddOptions) -> Result<()> {
         println!("  warning: {warning}");
     }
     for link in page_links(&note.body) {
-        if !book.pages.iter().any(|p| p.slug == link) {
+        if link != STRUCTURE_SLUG && !book.pages.iter().any(|p| p.slug == link) {
             println!("  warning: link [[{link}]] names no page");
         }
     }
@@ -580,12 +581,17 @@ fn is_identifier(span: &str) -> bool {
 /// Prints one rendered page to stdout, whatever the state of other pages.
 pub fn show(book_dir: &Path, page: &str) -> Result<()> {
     let book = load_book(book_dir)?;
-    if !book.pages.iter().any(|p| p.slug == page) {
+    if page != STRUCTURE_SLUG && !book.pages.iter().any(|p| p.slug == page) {
         bail!("unknown page `{page}`");
     }
     let notes = load_notes(&book)?;
     let file = page_file(&book, page);
-    let (_, content) = render_site(&book, &notes)
+    let map = if page == STRUCTURE_SLUG {
+        Some(structure::build_map(&book, &notes, 30)?)
+    } else {
+        None
+    };
+    let (_, content) = render_site(&book, &notes, map.as_ref())
         .into_iter()
         .find(|(name, _)| *name == file)
         .context("page not rendered")?;
@@ -729,7 +735,8 @@ pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
     }
     let out = out.unwrap_or_else(|| book.dir.join("out"));
     prepare_output(&out)?;
-    let files = render_site(&book, &notes);
+    let map = structure::build_map(&book, &notes, 30)?;
+    let files = render_site(&book, &notes, Some(&map));
     for (name, content) in &files {
         write_file(out.join(name), content.as_bytes())?;
     }
@@ -877,6 +884,8 @@ impl Book {
             "Contents" => "目录",
             "Generated from" => "生成自",
             "All pages" => "全书单页",
+            "Code structure" => "代码结构",
+            "Appendix" => "附录",
             _ => en,
         }
     }
@@ -912,6 +921,11 @@ pub fn load_book(dir: &Path) -> Result<Book> {
             .map(|(s, t)| (s.trim(), t.trim()))
             .unwrap_or((item.trim(), item.trim()));
         validate_slug(slug, "page slug")?;
+        if slug == STRUCTURE_SLUG {
+            bail!(
+                "{BOOK_FILE}: `{STRUCTURE_SLUG}` is reserved for the generated code structure page"
+            );
+        }
         if pages.iter().any(|p: &Page| p.slug == slug) {
             bail!("{BOOK_FILE}: duplicate page `{slug}`");
         }
@@ -1390,7 +1404,7 @@ pub fn check_book(book: &Book, notes: &[Note]) -> Result<Report> {
             report.warnings.push(format!("{name}: {warning}"));
         }
         for link in page_links(&note.body) {
-            if !slugs.contains(link.as_str()) {
+            if link != STRUCTURE_SLUG && !slugs.contains(link.as_str()) {
                 report
                     .errors
                     .push(format!("{name}: link [[{link}]] names no page"));
@@ -1511,9 +1525,9 @@ fn tracked_files(repo: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-struct Inventory {
-    files: BTreeMap<String, usize>,
-    total_lines: usize,
+pub(crate) struct Inventory {
+    pub(crate) files: BTreeMap<String, usize>,
+    pub(crate) total_lines: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1538,7 +1552,7 @@ pub struct Bucket {
 }
 
 impl Bucket {
-    fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         match (self.dir.as_str(), self.kind) {
             ("", BucketKind::Files) => "(root files)".to_string(),
             ("", _) => "(other)".to_string(),
@@ -1548,7 +1562,7 @@ impl Bucket {
         }
     }
 
-    fn contains(&self, path: &str) -> bool {
+    pub(crate) fn contains(&self, path: &str) -> bool {
         let inside = self.dir.is_empty() || path.starts_with(&format!("{}/", self.dir));
         inside
             && !self
@@ -1563,7 +1577,7 @@ impl Bucket {
 }
 
 impl Inventory {
-    fn scan(repo: &Path, ignore: &[String]) -> Result<Self> {
+    pub(crate) fn scan(repo: &Path, ignore: &[String]) -> Result<Self> {
         let mut files = BTreeMap::new();
         let mut total_lines = 0;
         for path in tracked_files(repo)? {
@@ -1581,7 +1595,7 @@ impl Inventory {
     /// Splits the repository into at most `max` areas by repeatedly splitting
     /// the largest directory, so big subsystems get their own row. When a
     /// directory has too many children, the small ones share an "(other)" row.
-    fn buckets(&self, max: usize) -> Vec<Bucket> {
+    pub(crate) fn buckets(&self, max: usize) -> Vec<Bucket> {
         let mut dir_lines: BTreeMap<String, usize> = BTreeMap::new();
         let mut children: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let mut has_files: BTreeSet<String> = BTreeSet::new();
@@ -1835,17 +1849,27 @@ fn prepare_output(out: &Path) -> Result<()> {
 }
 
 fn page_file(book: &Book, slug: &str) -> String {
+    if slug == STRUCTURE_SLUG {
+        return format!("{STRUCTURE_SLUG}.md");
+    }
     let index = book.pages.iter().position(|p| p.slug == slug).unwrap_or(0);
     format!("{:02}-{slug}.md", index + 1)
 }
 
 /// Returns `(relative file name, content)` for every output file.
-pub fn render_site(book: &Book, notes: &[Note]) -> Vec<(String, String)> {
-    let titles: BTreeMap<&str, &str> = book
+/// `structure` is the generated code-structure body, rendered as an appendix.
+pub fn render_site(
+    book: &Book,
+    notes: &[Note],
+    structure: Option<&structure::StructureMap>,
+) -> Vec<(String, String)> {
+    let structure_title = book.label("Code structure");
+    let mut titles: BTreeMap<&str, &str> = book
         .pages
         .iter()
         .map(|p| (p.slug.as_str(), p.title.as_str()))
         .collect();
+    titles.insert(STRUCTURE_SLUG, structure_title);
     let mut files = Vec::new();
     let mut all = format!(
         "---\ntitle: {} — {}\n---\n\n# {}\n\n",
@@ -1877,6 +1901,19 @@ pub fn render_site(book: &Book, notes: &[Note]) -> Vec<(String, String)> {
                 String::new()
             } else {
                 format!(" — {}", sections.join(" · "))
+            }
+        ));
+    }
+    if structure.is_some() {
+        index.push_str(&format!(
+            "\n## {}\n\n- [{}]({}) — {}\n",
+            book.label("Appendix"),
+            structure_title,
+            page_file(book, STRUCTURE_SLUG),
+            if book.lang == "zh" {
+                "由 Codocia 从代码生成：功能区、依赖、讲解页"
+            } else {
+                "generated from the code: areas, dependencies, pages"
             }
         ));
     }
@@ -1953,8 +1990,50 @@ pub fn render_site(book: &Book, notes: &[Note]) -> Vec<(String, String)> {
             demoted.trim_end()
         ));
     }
+    if let Some(map) = structure {
+        let page_body = structure::render(book, map, |slug| {
+            format!(
+                "[{}]({})",
+                titles.get(slug).unwrap_or(&slug),
+                page_file(book, slug)
+            )
+        });
+        files.push((
+            page_file(book, STRUCTURE_SLUG),
+            format!("---\ntitle: {structure_title}\n---\n\n# {structure_title}\n\n{page_body}"),
+        ));
+        let all_body = structure::render(book, map, |slug| {
+            format!("[{}](#{slug})", titles.get(slug).unwrap_or(&slug))
+        })
+        .lines()
+        .map(|l| {
+            if l.starts_with('#') {
+                format!("#{l}")
+            } else {
+                l.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+        all.push_str(&format!(
+            "<a id=\"{STRUCTURE_SLUG}\"></a>\n\n## {structure_title}\n\n{}\n\n",
+            all_body.trim_end()
+        ));
+    }
     files.push(("all.md".to_string(), all.trim_end().to_string() + "\n"));
     files
+}
+
+/// Prints the generated code structure to stdout.
+pub fn map(book_dir: &Path, max_areas: usize) -> Result<()> {
+    let book = load_book(book_dir)?;
+    let notes = load_notes(&book)?;
+    let map = structure::build_map(&book, &notes, max_areas)?;
+    print!(
+        "{}",
+        structure::render(&book, &map, |slug| format!("[[{slug}]]"))
+    );
+    Ok(())
 }
 
 fn resolve_links(body: &str, link: impl Fn(&str) -> String) -> String {

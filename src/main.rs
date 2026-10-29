@@ -80,7 +80,14 @@ enum Command {
         #[arg(long, default_value_t = 1000)]
         window: usize,
     },
-    /// Print one rendered page to stdout.
+    /// Print the generated code structure: areas, dependencies, pages.
+    Map {
+        #[arg(long, default_value = ".")]
+        book: PathBuf,
+        #[arg(long, default_value_t = 30)]
+        areas: usize,
+    },
+    /// Print one rendered page to stdout (`structure` for the generated map).
     Show {
         #[arg(long, default_value = ".")]
         book: PathBuf,
@@ -236,6 +243,7 @@ enum SiteCommand {
 }
 
 fn main() -> Result<()> {
+    reset_sigpipe();
     let cli = Cli::parse();
     match cli.command {
         None | Some(Command::Skill) => {
@@ -303,6 +311,7 @@ fn main() -> Result<()> {
             limit,
             window,
         }) => book::history(&book, limit, window),
+        Some(Command::Map { book, areas }) => book::map(&book, areas),
         Some(Command::Show { book, page }) => book::show(&book, &page),
         Some(Command::Build { book, out, force }) => book::build(&book, out, force),
         Some(Command::Drift { command }) => match command {
@@ -407,3 +416,15 @@ fn main() -> Result<()> {
         }
     }
 }
+
+/// Exit quietly when stdout is closed early (for example `codocia map | head`)
+/// instead of panicking on a broken pipe.
+#[cfg(unix)]
+fn reset_sigpipe() {
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
+#[cfg(not(unix))]
+fn reset_sigpipe() {}

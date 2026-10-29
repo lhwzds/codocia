@@ -33,6 +33,10 @@ codocia build                  # out/index.md, out/NN-page.md, out/all.md
 - **Maintainable.** When code moves, `pin` follows it; when cited code
   changes, `check` fails until the note is reviewed. `rebase` moves the book
   to the new commit.
+- **Structure is generated, not written.** Every build adds a `structure`
+  appendix computed from the code — areas, their own descriptions, the most
+  imported files, import dependencies between areas, and which pages explain
+  each area — so the map of the code cannot go stale.
 - **Agent-friendly.** Plain files (`book.md`, `notes/<page>/<id>.md`), one
   note per file, so several agents can write different pages in parallel.
 
@@ -46,7 +50,8 @@ codocia build                  # out/index.md, out/NN-page.md, out/all.md
 | `note add/list/rm` | Save (`--replace` keeps omitted fields), list, delete notes |
 | `pin [--force page/id]` | Pin new evidence, follow moved code, accept reviewed changes |
 | `check [--page p]` | Evidence, links, backticked symbols and paths, budgets |
-| `show <page>` | Print one rendered page |
+| `map` | Generated structure: areas, own descriptions, hub files, import graph, pages |
+| `show <page>` | Print one rendered page (`structure` for the map) |
 | `build [--out dir]` | Write the Markdown book |
 | `rebase` | Move the pinned commit to the repository HEAD |
 | `site …` / `serve …` | Render a Markdown directory with Starlight |
