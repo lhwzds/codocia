@@ -1355,10 +1355,94 @@ fn ensure_starlight_title(content: &str, path: &Path) -> String {
         let title = title_from_frontmatter(frontmatter)
             .or_else(|| title_from_markdown(body))
             .unwrap_or_else(|| title_from_path(path));
-        return render_starlight_markdown(&title, &parse_covers(frontmatter), body);
+        let body = site_body(body, &title);
+        return render_starlight_markdown(&title, &parse_covers(frontmatter), &body);
     }
     let title = title_from_markdown(content).unwrap_or_else(|| title_from_path(path));
-    render_starlight_markdown(&title, &[], content)
+    let body = site_body(content, &title);
+    render_starlight_markdown(&title, &[], &body)
+}
+
+/// Adapts portable Markdown to Starlight: drops an H1 that repeats the page
+/// title, rewrites relative `.md` links to site URLs, and turns Mermaid
+/// fences into `<pre class="mermaid">` blocks rendered in the browser.
+fn site_body(body: &str, title: &str) -> String {
+    let mut out = String::new();
+    let mut lines = body.lines().peekable();
+    while lines.peek().is_some_and(|l| l.trim().is_empty()) {
+        lines.next();
+    }
+    if lines
+        .peek()
+        .is_some_and(|l| l.trim().strip_prefix("# ").map(str::trim) == Some(title))
+    {
+        lines.next();
+    }
+    let mut mermaid: Option<String> = None;
+    for line in lines {
+        if let Some(diagram) = &mut mermaid {
+            if line.trim_start().starts_with("```") {
+                out.push_str(&format!(
+                    "<pre class=\"mermaid\">\n{}</pre>\n",
+                    html_escape(diagram)
+                ));
+                mermaid = None;
+            } else {
+                diagram.push_str(line);
+                diagram.push('\n');
+            }
+            continue;
+        }
+        if line.trim_start().starts_with("```mermaid") {
+            mermaid = Some(String::new());
+            continue;
+        }
+        out.push_str(&rewrite_md_links(line));
+        out.push('\n');
+    }
+    if let Some(diagram) = mermaid {
+        out.push_str(&format!("```mermaid\n{diagram}"));
+    }
+    out
+}
+
+fn rewrite_md_links(line: &str) -> String {
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(start) = rest.find("](") {
+        let (before, after) = rest.split_at(start + 2);
+        out.push_str(before);
+        let Some(end) = after.find([')', ' ']) else {
+            rest = after;
+            break;
+        };
+        let target = &after[..end];
+        out.push_str(&site_link(target).unwrap_or_else(|| target.to_string()));
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn site_link(target: &str) -> Option<String> {
+    if target.contains("://") || target.starts_with('#') || target.starts_with('/') {
+        return None;
+    }
+    let (path, fragment) = match target.split_once('#') {
+        Some((path, fragment)) => (path, format!("#{fragment}")),
+        None => (target, String::new()),
+    };
+    let stem = path.strip_suffix(".md")?;
+    let stem = stem
+        .strip_suffix("index")
+        .map(|s| s.trim_end_matches('/'))
+        .unwrap_or(stem);
+    let url = if stem.is_empty() {
+        "../".to_string()
+    } else {
+        format!("../{stem}/")
+    };
+    Some(format!("{url}{fragment}"))
 }
 
 fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
@@ -1476,6 +1560,14 @@ export default defineConfig({{
   integrations: [
     starlight({{
       title: {},
+      head: [
+        {{
+          tag: 'script',
+          attrs: {{ type: 'module' }},
+          content:
+            "import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({{ startOnLoad: true }});",
+        }},
+      ],
     }}),
   ],
 }});
@@ -1555,6 +1647,17 @@ fn render_llms_full(title: &str, docs_dir: &Path, docs: &[PathBuf]) -> String {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn site_body_rewrites_links_and_mermaid() {
+        let body = "# Runtime\n\nSee [Sched](03-scheduling.md#loop) and [home](index.md) and [web](https://x.dev/a.md).\n\n```mermaid\nA-->B\n```\n";
+        let out = site_body(body, "Runtime");
+        assert!(!out.contains("# Runtime"));
+        assert!(out.contains("[Sched](../03-scheduling/#loop)"));
+        assert!(out.contains("[home](../)"));
+        assert!(out.contains("(https://x.dev/a.md)"));
+        assert!(out.contains("<pre class=\"mermaid\">\nA--&gt;B\n</pre>"));
+    }
 
     #[test]
     fn parses_covers_from_frontmatter() {
@@ -1696,7 +1799,8 @@ mod tests {
         let generated =
             fs::read_to_string(output.join("src/content/docs/guides/usage.md")).unwrap();
         assert!(generated.contains("title: \"Usage\""));
-        assert!(generated.contains("# Usage"));
+        // Starlight renders the title; a repeated H1 is dropped.
+        assert!(!generated.contains("# Usage"));
 
         let config = fs::read_to_string(output.join("src/content.config.ts")).unwrap();
         assert!(config.contains("docsLoader()"));
@@ -1723,7 +1827,7 @@ mod tests {
         assert!(generated.contains("title: \"Hooks\""));
         assert!(generated.contains("  - \"src/**/*.rs\""));
         assert!(!generated.contains("\n.rs\n"));
-        assert!(generated.contains("# Hooks"));
+        assert!(!generated.contains("# Hooks"));
     }
 
     #[test]

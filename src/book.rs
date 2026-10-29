@@ -876,6 +876,7 @@ impl Book {
             "Sources" => "来源",
             "Contents" => "目录",
             "Generated from" => "生成自",
+            "All pages" => "全书单页",
             _ => en,
         }
     }
@@ -1846,7 +1847,12 @@ pub fn render_site(book: &Book, notes: &[Note]) -> Vec<(String, String)> {
         .map(|p| (p.slug.as_str(), p.title.as_str()))
         .collect();
     let mut files = Vec::new();
-    let mut all = format!("# {}\n\n", book.title);
+    let mut all = format!(
+        "---\ntitle: {} — {}\n---\n\n# {}\n\n",
+        book.title,
+        book.label("All pages"),
+        book.title
+    );
     if !book.intro.is_empty() {
         all.push_str(&format!("{}\n\n", book.intro));
     }
