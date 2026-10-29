@@ -657,6 +657,7 @@ pub fn note_rm(book_dir: &Path, name: &str) -> Result<()> {
 pub fn pin(book_dir: &Path, force: &[String]) -> Result<()> {
     let book = load_book(book_dir)?;
     let repo = book.repo_path();
+    let renames = git_renames(&repo, &book.commit);
     let mut changed = 0;
     for mut note in load_notes(&book)? {
         let forced = force
@@ -664,6 +665,16 @@ pub fn pin(book_dir: &Path, force: &[String]) -> Result<()> {
             .any(|f| *f == note.id || *f == format!("{}/{}", note.page, note.id));
         let mut dirty = false;
         for item in &mut note.evidence {
+            // A file renamed since the pinned commit: follow it, then check
+            // the cited lines at the new path as usual.
+            if let EvidenceRef::File { path, .. } = &mut item.target
+                && !repo.join(path.as_str()).exists()
+                && let Some(new_path) = renames.get(path.as_str())
+            {
+                println!("  {path} -> {new_path}");
+                *path = new_path.clone();
+                dirty = true;
+            }
             let state = evidence_state(&repo, item);
             match state {
                 EvidenceState::Unpinned => {
@@ -1395,6 +1406,7 @@ pub fn check_book(book: &Book, notes: &[Note]) -> Result<Report> {
     }
     let slugs: BTreeSet<&str> = book.pages.iter().map(|p| p.slug.as_str()).collect();
     let tracked = tracked_files(&repo).unwrap_or_default();
+    let renames = git_renames(&repo, &book.commit);
     if book.pages.len() > book.max_pages {
         report.warnings.push(format!(
             "{} pages exceed the {}-page budget; merge pages",
@@ -1455,9 +1467,17 @@ pub fn check_book(book: &Book, notes: &[Note]) -> Result<Report> {
                 EvidenceState::Unpinned => report
                     .errors
                     .push(format!("{name}: unpinned evidence {shown}; run `codocia pin`")),
-                EvidenceState::Missing => report
-                    .errors
-                    .push(format!("{name}: evidence file no longer exists: {shown}")),
+                EvidenceState::Missing => match &item.target {
+                    EvidenceRef::File { path, .. } if renames.contains_key(path.as_str()) => {
+                        report.errors.push(format!(
+                            "{name}: {shown} was renamed to {}; run `codocia pin`",
+                            renames[path.as_str()]
+                        ))
+                    }
+                    _ => report
+                        .errors
+                        .push(format!("{name}: evidence file no longer exists: {shown}")),
+                },
                 EvidenceState::BadRange => report
                     .errors
                     .push(format!("{name}: evidence range is outside the file: {shown}")),
@@ -1834,6 +1854,41 @@ fn git_log(repo: &Path, window: Option<usize>) -> Result<Vec<GitCommit>> {
         }
     }
     Ok(commits)
+}
+
+/// Files renamed between the pinned commit and the working tree
+/// (old path -> new path), as git's rename detection sees them.
+fn git_renames(repo: &Path, commit: &str) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    if commit.is_empty() {
+        return out;
+    }
+    let Ok(output) = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["diff", "-M", "--name-status", "-z", commit])
+        .output()
+    else {
+        return out;
+    };
+    let fields: Vec<String> = output
+        .stdout
+        .split(|b| *b == 0)
+        .map(|f| String::from_utf8_lossy(f).to_string())
+        .collect();
+    let mut i = 0;
+    while i < fields.len() {
+        let status = &fields[i];
+        if status.starts_with('R') && i + 2 < fields.len() {
+            out.insert(fields[i + 1].clone(), fields[i + 2].clone());
+            i += 3;
+        } else if status.starts_with('C') {
+            i += 3;
+        } else {
+            i += 2;
+        }
+    }
+    out
 }
 
 fn git_remote_url(repo: &Path) -> Option<String> {
@@ -2236,6 +2291,44 @@ mod tests {
             body: body.to_string(),
             replace: false,
         })
+    }
+
+    #[test]
+    fn pin_follows_renamed_files() {
+        let (repo, book) = fixture();
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        git(&repo, &["mv", "src/core/engine.rs", "src/core/runner.rs"]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "rename",
+            ],
+        );
+        let loaded = load_book(&book).unwrap();
+        let report = check_book(&loaded, &load_notes(&loaded).unwrap()).unwrap();
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("renamed to src/core/runner.rs")),
+            "{:?}",
+            report.errors
+        );
+        pin(&book, &[]).unwrap();
+        let report = check_book(&loaded, &load_notes(&loaded).unwrap()).unwrap();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
     }
 
     #[test]
