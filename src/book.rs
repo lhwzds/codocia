@@ -2067,7 +2067,13 @@ pub fn render_site(
     index.push_str(&format!(
         "\n<sub>{} {} @ `{}`</sub>\n",
         book.label("Generated from"),
-        book.remote.as_deref().unwrap_or(&book.repo),
+        book.remote.clone().unwrap_or_else(|| {
+            // Never publish a local absolute path; name the repository only.
+            Path::new(&book.repo)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        }),
         short(&book.commit)
     ));
     files.push(("index.md".to_string(), index));
@@ -2631,6 +2637,11 @@ mod tests {
         assert!(!out.join("index.md").exists());
         let page = fs::read_to_string(out.join("01-overview.md")).unwrap();
         assert!(page.contains("](../src/core/engine.rs#L2-L4)"), "{page}");
+        let index = fs::read_to_string(out.join("README.md")).unwrap();
+        assert!(
+            !index.contains(&repo.to_string_lossy().to_string()),
+            "{index}"
+        );
     }
 
     #[test]
