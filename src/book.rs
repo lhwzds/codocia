@@ -155,7 +155,7 @@ pub fn init(options: &InitOptions) -> Result<()> {
         commit,
         remote: git_remote_url(&repo),
         lang: options.lang.clone(),
-        max_pages: 8,
+        max_pages: default_page_budget(&repo),
         max_page_words: 900,
         max_note_words: 180,
         pages: vec![Page {
@@ -176,6 +176,18 @@ pub fn init(options: &InitOptions) -> Result<()> {
     );
     println!("next: edit {BOOK_FILE} (pages, ignore), then run `codocia status`");
     Ok(())
+}
+
+/// Page budget scaled to the code: small projects get short books.
+fn default_page_budget(repo: &Path) -> usize {
+    let lines = Inventory::scan(repo, &[])
+        .map(|i| i.total_lines)
+        .unwrap_or(0);
+    match lines {
+        0..20_000 => 4,
+        20_000..200_000 => 6,
+        _ => 8,
+    }
 }
 
 pub fn status(book_dir: &Path, max_buckets: usize, area: Option<&str>) -> Result<()> {
