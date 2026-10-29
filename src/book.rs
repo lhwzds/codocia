@@ -757,8 +757,17 @@ pub fn rebase(book_dir: &Path) -> Result<()> {
         print_report(&report);
         bail!("resolve errors before moving the book to the new commit");
     }
-    let head = current_commit(&book.repo_path())?;
-    book.commit = head;
+    let repo = book.repo_path();
+    // Skip trailing commits that only add Codocia's generated docs, so the
+    // book pins the code it describes rather than its own output.
+    let mut target = current_commit(&repo)?;
+    while let Some(parent) = git_parent(&repo, &target) {
+        if code_moved(&repo, &parent, &target) {
+            break;
+        }
+        target = parent;
+    }
+    book.commit = target;
     write_file(book.dir.join(BOOK_FILE), render_book(&book).as_bytes())?;
     println!("book now pinned to {}", short(&book.commit));
     Ok(())
@@ -1686,6 +1695,14 @@ impl Inventory {
             if path.is_empty() || ignore.iter().any(|g| glob_matches(g, Path::new(&path))) {
                 continue;
             }
+            // Codocia's own output is not part of the code to explain.
+            if Path::new(&path)
+                .ancestors()
+                .skip(1)
+                .any(|dir| repo.join(dir).join(BUILD_MARKER).is_file())
+            {
+                continue;
+            }
             if let Some(lines) = count_text_lines(&repo.join(&path)) {
                 total_lines += lines;
                 files.insert(path, lines);
@@ -1898,6 +1915,19 @@ fn git_log(repo: &Path, window: Option<usize>) -> Result<Vec<GitCommit>> {
         }
     }
     Ok(commits)
+}
+
+fn git_parent(repo: &Path, commit: &str) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", "--verify", "-q", &format!("{commit}^")])
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 /// True when commits after the pinned one changed anything besides
@@ -2410,6 +2440,37 @@ mod tests {
         pin(&book, &[]).unwrap();
         let report = check_book(&loaded, &load_notes(&loaded).unwrap()).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
+    }
+
+    #[test]
+    fn generated_docs_are_not_code() {
+        let (repo, book) = fixture();
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        build(&book, Some(repo.join("docs")), false).unwrap();
+        let pinned = load_book(&book).unwrap().commit;
+        git(&repo, &["add", "docs"]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "docs",
+            ],
+        );
+        let inventory = Inventory::scan(&repo, &[]).unwrap();
+        assert!(inventory.files.keys().all(|p| !p.starts_with("docs/")));
+        rebase(&book).unwrap();
+        assert_eq!(load_book(&book).unwrap().commit, pinned);
     }
 
     #[test]
