@@ -205,7 +205,7 @@ pub fn status(book_dir: &Path, max_buckets: usize, area: Option<&str>) -> Result
         "repo: {} @ {}{}",
         book.repo,
         short(&book.commit),
-        if !code_moved(&repo, &book.commit, &head) {
+        if !code_moved(&repo, &book.commit, &head, &book.ignore) {
             String::new()
         } else {
             format!(" (repo HEAD is now {}; run `codocia check`)", short(&head))
@@ -737,7 +737,7 @@ pub fn pin(book_dir: &Path, force: &[String]) -> Result<()> {
         }
     }
     let head = current_commit(&repo)?;
-    if code_moved(&repo, &book.commit, &head) && force.is_empty() {
+    if code_moved(&repo, &book.commit, &head, &book.ignore) && force.is_empty() {
         println!(
             "repo HEAD {} differs from the pinned commit {}",
             short(&head),
@@ -762,7 +762,7 @@ pub fn rebase(book_dir: &Path) -> Result<()> {
     // book pins the code it describes rather than its own output.
     let mut target = current_commit(&repo)?;
     while let Some(parent) = git_parent(&repo, &target) {
-        if code_moved(&repo, &parent, &target) {
+        if code_moved(&repo, &parent, &target, &book.ignore) {
             break;
         }
         target = parent;
@@ -1986,7 +1986,7 @@ fn git_parent(repo: &Path, commit: &str) -> Option<String> {
 /// True when commits after the pinned one changed anything besides
 /// Codocia's own generated docs (directories holding a build manifest), so
 /// committing the built docs into the repository is not reported as drift.
-fn code_moved(repo: &Path, commit: &str, head: &str) -> bool {
+fn code_moved(repo: &Path, commit: &str, head: &str, ignore: &[String]) -> bool {
     if head == commit || head.is_empty() {
         return false;
     }
@@ -2007,10 +2007,14 @@ fn code_moved(repo: &Path, commit: &str, head: &str) -> bool {
         .filter(|p| !p.is_empty())
         .any(|p| {
             let path = String::from_utf8_lossy(p);
-            !Path::new(path.as_ref())
+            let generated = Path::new(path.as_ref())
                 .ancestors()
                 .skip(1)
-                .any(|dir| repo.join(dir).join(BUILD_MARKER).is_file())
+                .any(|dir| repo.join(dir).join(BUILD_MARKER).is_file());
+            let out_of_scope = ignore
+                .iter()
+                .any(|g| glob_matches(g, Path::new(path.as_ref())));
+            !generated && !out_of_scope
         })
 }
 
