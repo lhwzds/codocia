@@ -51,7 +51,9 @@ pub fn build_map(book: &Book, notes: &[Note], max_areas: usize) -> Result<Struct
             let mut members: Vec<(&String, usize, usize)> = inventory
                 .files
                 .iter()
-                .filter(|(path, _)| bucket.contains(path) && is_code_file(path))
+                .filter(|(path, _)| {
+                    bucket.contains(path) && is_code_file(path) && !is_test_file(path)
+                })
                 .map(|(path, lines)| {
                     (
                         path,
@@ -291,6 +293,23 @@ fn thousands(n: usize) -> String {
     out
 }
 
+/// Tests are imported a lot but are not where a design lives.
+fn is_test_file(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let in_test_dir = path.split('/').any(|part| {
+        matches!(
+            part,
+            "test" | "tests" | "__tests__" | "testing" | "testdata"
+        )
+    });
+    in_test_dir
+        || name.starts_with("test_")
+        || name.contains("_test.")
+        || name.contains(".test.")
+        || name.contains(".spec.")
+        || name.ends_with("_tests.rs")
+}
+
 fn is_code_file(path: &str) -> bool {
     const CODE: &[&str] = &[
         "py", "rs", "go", "ts", "tsx", "js", "jsx", "mjs", "c", "cc", "cpp", "cu", "cuh", "h",
@@ -443,6 +462,8 @@ fn strip_markdown(line: &str) -> String {
 pub fn import_edges<'a>(repo: &Path, files: &[&'a String]) -> Vec<(&'a str, &'a str)> {
     let python = PythonIndex::new(files);
     let rust = RustIndex::new(repo, files);
+    let go = GoIndex::new(repo, files);
+    let c = CIndex::new(files);
     let known: BTreeSet<&str> = files.iter().map(|f| f.as_str()).collect();
     let mut edges = Vec::new();
     for file in files {
@@ -450,7 +471,16 @@ pub fn import_edges<'a>(repo: &Path, files: &[&'a String]) -> Vec<(&'a str, &'a 
         let Some(ext) = path.rsplit_once('.').map(|(_, e)| e) else {
             continue;
         };
-        if !matches!(ext, "py" | "rs" | "ts" | "tsx" | "js" | "jsx" | "mjs") {
+        let c_like = matches!(
+            ext,
+            "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" | "hh" | "cu" | "cuh" | "m" | "mm"
+        );
+        if !c_like
+            && !matches!(
+                ext,
+                "py" | "rs" | "ts" | "tsx" | "js" | "jsx" | "mjs" | "go"
+            )
+        {
             continue;
         }
         let Ok(text) = fs::read_to_string(repo.join(path)) else {
@@ -468,6 +498,20 @@ pub fn import_edges<'a>(repo: &Path, files: &[&'a String]) -> Vec<(&'a str, &'a 
             "rs" => {
                 for target in rust.resolve_all(&text, path) {
                     targets.insert(target);
+                }
+            }
+            "go" => {
+                for spec in go_imports(&text) {
+                    if let Some(target) = go.resolve(&spec) {
+                        targets.insert(target);
+                    }
+                }
+            }
+            _ if c_like => {
+                for spec in c_includes(&text) {
+                    if let Some(target) = c.resolve(path, &spec) {
+                        targets.insert(target);
+                    }
                 }
             }
             _ => {
@@ -680,6 +724,158 @@ impl<'a> RustIndex<'a> {
     }
 }
 
+/// Go imports name packages (directories); a package resolves to its first
+/// non-test file so the edge lands in the right area.
+struct GoIndex<'a> {
+    /// (module path, module directory), longest first.
+    modules: Vec<(String, String)>,
+    package_files: BTreeMap<String, &'a str>,
+}
+
+impl<'a> GoIndex<'a> {
+    fn new(repo: &Path, files: &[&'a String]) -> Self {
+        let mut modules = Vec::new();
+        let mut package_files: BTreeMap<String, &'a str> = BTreeMap::new();
+        for file in files {
+            if let Some(dir) = file.strip_suffix("go.mod") {
+                if let Ok(text) = fs::read_to_string(repo.join(file.as_str()))
+                    && let Some(module) =
+                        text.lines().find_map(|l| l.trim().strip_prefix("module "))
+                {
+                    modules.push((
+                        module.trim().to_string(),
+                        dir.trim_end_matches('/').to_string(),
+                    ));
+                }
+            } else if file.ends_with(".go") && !file.ends_with("_test.go") {
+                let dir = file
+                    .rsplit_once('/')
+                    .map(|(d, _)| d)
+                    .unwrap_or("")
+                    .to_string();
+                package_files.entry(dir).or_insert(file.as_str());
+            }
+        }
+        modules.sort_by_key(|(m, _)| std::cmp::Reverse(m.len()));
+        Self {
+            modules,
+            package_files,
+        }
+    }
+
+    fn resolve(&self, spec: &str) -> Option<&'a str> {
+        let (module, dir) = self
+            .modules
+            .iter()
+            .find(|(m, _)| spec == m || spec.starts_with(&format!("{m}/")))?;
+        let rest = spec[module.len()..].trim_start_matches('/');
+        let target = match (dir.is_empty(), rest.is_empty()) {
+            (true, _) => rest.to_string(),
+            (false, true) => dir.clone(),
+            (false, false) => format!("{dir}/{rest}"),
+        };
+        self.package_files.get(&target).copied()
+    }
+}
+
+fn go_imports(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_block = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if in_block {
+            if line.starts_with(')') {
+                in_block = false;
+                continue;
+            }
+        } else if let Some(rest) = line.strip_prefix("import") {
+            let rest = rest.trim();
+            if rest.starts_with('(') {
+                in_block = true;
+                continue;
+            }
+            if let Some(spec) = quoted(rest) {
+                out.push(spec);
+            }
+            continue;
+        } else {
+            continue;
+        }
+        if let Some(spec) = quoted(line) {
+            out.push(spec);
+        }
+    }
+    out
+}
+
+fn quoted(text: &str) -> Option<String> {
+    let start = text.find('"')?;
+    let end = text[start + 1..].find('"')?;
+    Some(text[start + 1..start + 1 + end].to_string())
+}
+
+/// C-family `#include` resolution: relative to the including file first,
+/// then a unique path-suffix match anywhere in the repository.
+struct CIndex<'a> {
+    by_name: HashMap<&'a str, Vec<&'a str>>,
+    known: BTreeSet<&'a str>,
+}
+
+impl<'a> CIndex<'a> {
+    fn new(files: &[&'a String]) -> Self {
+        let mut by_name: HashMap<&'a str, Vec<&'a str>> = HashMap::new();
+        for file in files {
+            let name = file.rsplit('/').next().unwrap_or(file);
+            by_name.entry(name).or_default().push(file.as_str());
+        }
+        Self {
+            by_name,
+            known: files.iter().map(|f| f.as_str()).collect(),
+        }
+    }
+
+    fn resolve(&self, from: &str, spec: &str) -> Option<&'a str> {
+        let mut parts: Vec<&str> = from.split('/').collect();
+        parts.pop();
+        for segment in spec.split('/') {
+            match segment {
+                "." | "" => {}
+                ".." => {
+                    parts.pop();
+                }
+                other => parts.push(other),
+            }
+        }
+        if let Some(found) = self.known.get(parts.join("/").as_str()) {
+            return Some(found);
+        }
+        let name = spec.rsplit('/').next().unwrap_or(spec);
+        let candidates: Vec<&&'a str> = self
+            .by_name
+            .get(name)?
+            .iter()
+            .filter(|p| **p == spec || p.ends_with(&format!("/{spec}")))
+            .collect();
+        (candidates.len() == 1).then(|| *candidates[0])
+    }
+}
+
+fn c_includes(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let rest = line.trim_start().strip_prefix('#')?.trim_start();
+            let rest = rest.strip_prefix("include")?.trim();
+            let (open, close) = match rest.chars().next()? {
+                '"' => ('"', '"'),
+                '<' => ('<', '>'),
+                _ => return None,
+            };
+            let inner = rest.strip_prefix(open)?;
+            Some(inner[..inner.find(close)?].to_string())
+        })
+        .collect()
+}
+
 fn cargo_package_name(text: &str) -> Option<String> {
     let mut in_package = false;
     for line in text.lines() {
@@ -817,6 +1013,45 @@ mod tests {
         assert!(is_code_file("a/b.py"));
         assert!(!is_code_file("LICENSE"));
         assert!(!is_code_file(".gitignore"));
+    }
+
+    #[test]
+    fn go_and_c_imports_resolve() {
+        let dir = std::env::temp_dir().join(format!("codocia-go-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("go.mod"),
+            "module github.com/acme/web\n\ngo 1.22\n",
+        )
+        .unwrap();
+        let files: Vec<String> = [
+            "go.mod",
+            "server.go",
+            "binding/form.go",
+            "binding/form_test.go",
+            "src/server.c",
+            "src/server.h",
+            "deps/lua/lua.h",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let refs: Vec<&String> = files.iter().collect();
+        let go = GoIndex::new(&dir, &refs);
+        let imports = go_imports("import (\n\t\"fmt\"\n\tb \"github.com/acme/web/binding\"\n)\n");
+        let resolved: Vec<&str> = imports.iter().filter_map(|s| go.resolve(s)).collect();
+        assert_eq!(resolved, vec!["binding/form.go"]);
+        let c = CIndex::new(&refs);
+        let specs = c_includes("#include \"server.h\"\n#include <lua.h>\n#include <stdio.h>\n");
+        let resolved: Vec<&str> = specs
+            .iter()
+            .filter_map(|s| c.resolve("src/server.c", s))
+            .collect();
+        assert_eq!(resolved, vec!["src/server.h", "deps/lua/lua.h"]);
+        assert!(is_test_file("binding/form_test.go"));
+        assert!(is_test_file("tests/unit/x.py"));
+        assert!(!is_test_file("src/server.c"));
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
