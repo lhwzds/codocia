@@ -189,7 +189,7 @@ pub fn status(book_dir: &Path, max_buckets: usize, area: Option<&str>) -> Result
         "repo: {} @ {}{}",
         book.repo,
         short(&book.commit),
-        if head == book.commit {
+        if !code_moved(&repo, &book.commit, &head) {
             String::new()
         } else {
             format!(" (repo HEAD is now {}; run `codocia check`)", short(&head))
@@ -704,7 +704,7 @@ pub fn pin(book_dir: &Path, force: &[String]) -> Result<()> {
         }
     }
     let head = current_commit(&repo)?;
-    if head != book.commit && force.is_empty() {
+    if code_moved(&repo, &book.commit, &head) && force.is_empty() {
         println!(
             "repo HEAD {} differs from the pinned commit {}",
             short(&head),
@@ -1854,6 +1854,35 @@ fn git_log(repo: &Path, window: Option<usize>) -> Result<Vec<GitCommit>> {
         }
     }
     Ok(commits)
+}
+
+/// True when commits after the pinned one changed anything besides
+/// Codocia's own generated docs (directories holding a build manifest), so
+/// committing the built docs into the repository is not reported as drift.
+fn code_moved(repo: &Path, commit: &str, head: &str) -> bool {
+    if head == commit || head.is_empty() {
+        return false;
+    }
+    let Ok(output) = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["diff", "--name-only", "-z", commit, head])
+        .output()
+    else {
+        return true;
+    };
+    if !output.status.success() {
+        return true;
+    }
+    output
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|p| !p.is_empty())
+        .any(|p| {
+            let path = String::from_utf8_lossy(p);
+            let dir = Path::new(path.as_ref()).parent().unwrap_or(Path::new(""));
+            !repo.join(dir).join(BUILD_MARKER).is_file()
+        })
 }
 
 /// Files renamed between the pinned commit and the working tree
