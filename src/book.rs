@@ -1880,8 +1880,10 @@ fn code_moved(repo: &Path, commit: &str, head: &str) -> bool {
         .filter(|p| !p.is_empty())
         .any(|p| {
             let path = String::from_utf8_lossy(p);
-            let dir = Path::new(path.as_ref()).parent().unwrap_or(Path::new(""));
-            !repo.join(dir).join(BUILD_MARKER).is_file()
+            !Path::new(path.as_ref())
+                .ancestors()
+                .skip(1)
+                .any(|dir| repo.join(dir).join(BUILD_MARKER).is_file())
         })
 }
 
