@@ -987,7 +987,7 @@ pub fn load_book(dir: &Path) -> Result<Book> {
         max_page_words: number("max_page_words", 900)?,
         max_note_words: number("max_note_words", 180)?,
         pages,
-        ignore: front.list("ignore").to_vec(),
+        ignore: front.list("ignore").iter().map(|g| unquote(g)).collect(),
         intro: body.trim().to_string(),
         link_base: None,
         dir,
@@ -2236,6 +2236,18 @@ mod tests {
             body: body.to_string(),
             replace: false,
         })
+    }
+
+    #[test]
+    fn quoted_ignore_globs_are_unquoted() {
+        let (_repo, book) = fixture();
+        let path = book.join(BOOK_FILE);
+        let text = fs::read_to_string(&path)
+            .unwrap()
+            .replace("ignore:\n", "ignore:\n  - \"src/**\"\n  - 'README.md'\n");
+        fs::write(&path, text).unwrap();
+        let loaded = load_book(&book).unwrap();
+        assert_eq!(loaded.ignore, vec!["src/**", "README.md"]);
     }
 
     #[test]
