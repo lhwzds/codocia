@@ -39,6 +39,8 @@ pub struct Book {
     pub max_pages: usize,
     pub max_page_words: usize,
     pub max_note_words: usize,
+    /// Whole-book budget; 0 means no limit (books written before it existed).
+    pub max_words: usize,
     pub pages: Vec<Page>,
     pub ignore: Vec<String>,
     pub intro: String,
@@ -148,6 +150,7 @@ pub fn init(options: &InitOptions) -> Result<()> {
     } else {
         "Overview"
     };
+    let budget = default_page_budget(&repo);
     let book = Book {
         dir: book_dir.clone(),
         title,
@@ -155,7 +158,8 @@ pub fn init(options: &InitOptions) -> Result<()> {
         commit,
         remote: git_remote_url(&repo),
         lang: options.lang.clone(),
-        max_pages: default_page_budget(&repo),
+        max_pages: budget.0,
+        max_words: budget.1,
         max_page_words: 900,
         max_note_words: 180,
         pages: vec![Page {
@@ -179,14 +183,14 @@ pub fn init(options: &InitOptions) -> Result<()> {
 }
 
 /// Page budget scaled to the code: small projects get short books.
-fn default_page_budget(repo: &Path) -> usize {
+fn default_page_budget(repo: &Path) -> (usize, usize) {
     let lines = Inventory::scan(repo, &[])
         .map(|i| i.total_lines)
         .unwrap_or(0);
     match lines {
-        0..20_000 => 4,
-        20_000..200_000 => 6,
-        _ => 8,
+        0..20_000 => (4, 2500),
+        20_000..200_000 => (6, 4000),
+        _ => (8, 6000),
     }
 }
 
@@ -238,7 +242,24 @@ pub fn status(book_dir: &Path, max_buckets: usize, area: Option<&str>) -> Result
             flag
         );
     }
-    println!("  total: {} notes, {} words", notes.len(), total_words);
+    println!(
+        "  total: {} notes, {} words{}",
+        notes.len(),
+        total_words,
+        if book.max_words > 0 {
+            format!(
+                " / {} book budget{}",
+                book.max_words,
+                if total_words > book.max_words {
+                    "  OVER BUDGET"
+                } else {
+                    ""
+                }
+            )
+        } else {
+            String::new()
+        }
+    );
 
     let inventory = Inventory::scan(&repo, &book.ignore)?;
     let cited = cited_paths(&notes);
@@ -1009,6 +1030,7 @@ pub fn load_book(dir: &Path) -> Result<Book> {
         max_pages: number("max_pages", 8)?,
         max_page_words: number("max_page_words", 900)?,
         max_note_words: number("max_note_words", 180)?,
+        max_words: number("max_words", 0)?,
         pages,
         ignore: front.list("ignore").iter().map(|g| unquote(g)).collect(),
         intro: body.trim().to_string(),
@@ -1029,6 +1051,9 @@ fn render_book(book: &Book) -> String {
     out.push_str(&format!("max_pages: {}\n", book.max_pages));
     out.push_str(&format!("max_page_words: {}\n", book.max_page_words));
     out.push_str(&format!("max_note_words: {}\n", book.max_note_words));
+    if book.max_words > 0 {
+        out.push_str(&format!("max_words: {}\n", book.max_words));
+    }
     out.push_str("pages:\n");
     for page in &book.pages {
         out.push_str(&format!("  - {}: {}\n", page.slug, page.title));
@@ -1424,6 +1449,13 @@ pub fn check_book(book: &Book, notes: &[Note]) -> Result<Report> {
             "{} pages exceed the {}-page budget; merge pages",
             book.pages.len(),
             book.max_pages
+        ));
+    }
+    let book_words: usize = notes.iter().map(|n| word_units(&n.body)).sum();
+    if book.max_words > 0 && book_words > book.max_words {
+        report.warnings.push(format!(
+            "book has {book_words} words (budget {}); cut repetition or merge pages",
+            book.max_words
         ));
     }
     for page in &book.pages {
