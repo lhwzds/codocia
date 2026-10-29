@@ -1,155 +1,112 @@
-# Codocia Docs Skill
+# Codocia Skill
 
-Use this guide when maintaining Markdown docs in a repository that uses Codocia.
-This skill is for AI coding agents such as Codex, Claude Code, and OpenCode
-that need to keep repository docs aligned with code changes.
+Codocia turns what you (the agent) learn about a codebase into a small,
+source-grounded documentation set. Codocia never calls a model and never edits
+the repository. You read code and write notes; Codocia pins evidence, tracks
+coverage and budgets, and compiles the notes into Markdown.
 
-## Core Rule
+## The Goal: Concise
 
-The product repository owns `docs/` as the source of truth. Codocia does not
-generate prose from source comments and does not create a hidden local skill
-folder.
+The reader is an engineer new to the project. After reading, they should know
+what it is, how one request or job flows through it, where each core module
+lives, and why the important designs are the way they are. Concision is the
+first quality bar:
 
-## Repository Policy
+- Explain structure, function, and design; skip what code navigation already
+  shows (argument lists, every class, every flag).
+- One page per functional area, not per file or directory. Default budget:
+  8 pages, 900 words per page, 180 words per note. A "word" is one Latin
+  word or two CJK characters; fenced code and diagrams are not counted, so
+  180 words is about 360 Chinese characters.
+- One note answers one question. If a note needs more than ~180 words, it is
+  two notes or it has too much detail.
+- Prefer one diagram (Mermaid in a fenced block, not counted as words) over
+  paragraphs describing boxes and arrows.
+- Name real symbols and paths in backticks so readers can jump to code.
+- No filler: no "this module is responsible for various…", no restating the
+  heading, no marketing.
 
-Read `codocia.md` before editing docs when the file exists. It is the
-repository's agent-readable documentation policy: default density, metric
-priorities, page defaults, and project-specific rules.
+## Workflow
 
-If `codocia.md` does not exist, use the default density tiers and metrics below.
-Do not treat `codocia.md` as machine-parsed config; code defaults live in the
-CLI and library.
+```bash
+codocia init --repo <repo> --book <book-dir> --lang zh   # book outside the repo
+cd <book-dir>
+# edit book.md: pages (the outline), ignore (out-of-scope globs), intro text
+codocia status            # pages, budgets, coverage map of the repo's areas
+codocia history           # hot files, structural commits, design-shaping commits
+# loop: read code -> add a note -> status
+codocia note add --page runtime --id request-flow --title "一个请求的完整链路" \
+  -e python/pkg/server.py:120-180 -e commit:abc1234 <<'EOF'
+...note body in Markdown...
+EOF
+codocia show runtime      # preview one rendered page
+codocia check             # evidence, links, symbols, budgets
+codocia build             # out/index.md, out/NN-page.md, out/all.md
+```
 
-## Documentation Density
+1. **Scope first.** Run `status` once, then put tests, benchmarks, examples,
+   vendored code, and generated files in `ignore`. The coverage map then shows
+   only what the docs should explain.
+2. **Outline second.** Choose ≤8 pages in `book.md` from the coverage map,
+   ordered for reading: overview → runtime flow → core subsystems → extension
+   points → history and design decisions.
+3. **Notes.** Read the code for one question at a time, then save a note.
+   Every note needs at least one `--evidence`:
+   - `path` (whole file), `path:N`, or `path:start-end` (1-based lines);
+   - `commit:<sha>`, `pr:<n>`, `issue:<n>` for history and decisions.
+   Cite the lines that prove the claim, not a whole 3000-line file.
+   `note add` echoes each cited range with its first line and flags wide
+   ranges; read that echo to confirm you cited what you meant.
+4. **Coverage is a map, not a target.** A `·` area in `status` means no note
+   cites it. Decide: does a newcomer need it? If yes, add a note; if no, leave
+   it or add it to `ignore`. Never write filler to turn rows into `✓`.
+5. **History.** `history` lists the files that keep changing and the commits
+   that reshaped the code. Read the important ones with `git show --stat` and
+   record the decision and its reason, citing `commit:`.
+6. **Finish.** Run `check` until it reports no errors, read `out/all.md`
+   end to end, cut repetition, then `build`.
 
-Do not generate placeholder-level docs. Do not bulk-create template-shaped
-source-file pages just to satisfy `covers` or make `codocia check` pass. Before
-editing a page, choose one density tier from `codocia.md` or this default set.
+## Note Rules
 
-- `compact`: Use for formatting-only, comment-only, test-only, or very small
-  internal changes. Keep prose unchanged when behavior does not change. If a
-  note is needed, state the changed behavior, affected command or API, and the
-  validation signal.
-- `standard`: Use as the default for user-visible behavior, CLI flags, config,
-  workflows, package surfaces, and normal feature work. Cover purpose,
-  inputs and outputs, commands or APIs, constraints, failure modes, at least one
-  concrete example, and validation.
-- `dense`: Use for public contracts, agent workflows, architecture, release or
-  deploy loops, runtime boundaries, schemas, and pages that future coding agents
-  will rely on. Include invariants, state transitions, edge cases,
-  compatibility notes, cross-links, operational checks, common mistakes, and
-  when not to change the page.
+- `--id` and page slugs use `a-z 0-9 - _`. Notes live in
+  `notes/<page>/<id>.md`; you may also edit a note file directly, then run
+  `codocia pin` if you changed its evidence.
+- `--title` is the section heading. Leave it empty (`--title ""`) for a
+  page's opening paragraph and give it `--order 0`. Without `--order`, a new
+  note goes after the page's existing notes.
+- Link pages with `[[slug]]`; Codocia renders the right link.
+- Update instead of duplicating: `note add --replace` keeps every field you
+  omit (title, order, evidence, body from an empty stdin). `-e` replaces the
+  evidence list; `--add-evidence` appends to it.
+- `note list [--page p]` shows ids, order, and length; `note rm page/id`
+  deletes a note.
+- `check` warns when a backticked identifier in a note appears in none of
+  its cited files, or a backticked path does not exist. Fix the name or cite
+  the file that defines it. Passing `check` means the evidence exists and is
+  current; it does not prove the prose is right, so read the cited lines.
 
-## Documentation Metrics
+## Several Agents, One Book
 
-Use these metrics to decide whether the page is complete enough for the chosen
-density tier. `codocia.md` can prioritize or specialize them per repository.
+Give each agent its own page. Empty pages are warnings, so the book stays
+buildable while others write. Use `codocia check --page <slug>` to see only
+your page's problems and `codocia show <slug>` to preview it; `build`
+rewrites the shared `out/` directory. Use `status --area <dir>` to see which
+files under one area are cited.
 
-- behavior coverage: the page explains behavior that users or agents can
-  observe.
-- operational completeness: the page includes commands, expected output,
-  validation, and recovery steps when relevant.
-- contract precision: the page defines inputs, outputs, config, schemas, APIs,
-  or CLI flags exactly when they are part of the documented surface.
-- maintenance context: the page records ownership, invariants, boundaries, and
-  when prose should not change.
-- agent usability: a coding agent can follow the page without guessing the next
-  inspection, edit, command, or evidence to report.
+## Keeping a Book Current
 
-## Anti-Template Rule
+When the repository moves:
 
-Avoid low-information pages that merely list modules, structs, functions, line
-counts, or generic summaries. Those pages can be useful as generated source
-indexes, but they are not sufficient docs and should not replace maintained
-Markdown.
+```bash
+codocia check                 # moved code is followed; changed code is an error
+codocia pin                   # follow moved code automatically
+# for each "code changed" error: re-read the code, fix the note, then
+codocia pin --force page/id
+codocia rebase                # pin the book to the new HEAD once check passes
+```
 
-When a repository asks for file-level docs, write file-level contracts, not
-inventory pages. Explain what the file owns, what callers rely on, how data
-flows through it, which invariants must hold, what can fail, and which tests or
-commands validate the behavior.
+## Legacy Drift Mode
 
-If a generated page has no real behavioral detail, do not refresh the snapshot
-as though the docs are complete. Improve the prose or mark it explicitly as an
-index/draft according to the repository policy.
-
-## Maintenance Loop
-
-1. Run `codocia check --base main`.
-2. Read `codocia.md` when present.
-3. Classify every reported section:
-   - `broken covers`: fix incorrect globs or stale page ownership.
-   - `missing snapshots`: review the page before creating snapshot metadata.
-   - `stale docs`: compare the Markdown body with the changed source files.
-   - `changed code without docs coverage`: add coverage to an existing concept
-     page or create a real docs page.
-   - `uncovered code files`: treat as inventory, not a reason to bulk-generate
-     shallow pages.
-4. Read every stale docs page and the `git diff review` excerpts reported by
-   the check.
-5. Choose the page's density tier and metric priorities, then update the
-   human-readable Markdown body only when the diff changes documented behavior,
-   public contracts, config, commands, workflows, failure modes, or maintenance
-   guidance.
-6. If a hash changed but the diff is formatting-only, comment-only, test-only,
-   or internal-only, leave the prose unchanged and record that decision in your
-   final response.
-7. Run `codocia snapshot` only after review.
-8. Run `codocia check --base main` again.
-
-## Starlight Publishing
-
-Markdown docs can be used directly as Starlight pages.
-
-`docs/` remains the source of truth. The generated Starlight site is disposable
-output and can be deleted and regenerated.
-
-Use these commands:
-
-- `codocia site generate`: generate the Starlight project only.
-- `codocia site build`: generate the site, install npm dependencies when
-  `node_modules` is missing, then run the Starlight build.
-- `codocia site serve`: generate the site, install npm dependencies when
-  `node_modules` is missing, then start the Astro dev server.
-- `codocia serve --plain`: serve source Markdown with a small built-in HTTP
-  server when Node/npm is not available. This is not Starlight.
-
-The generated Starlight project should contain:
-
-- `src/content/docs/`: Starlight-ready Markdown copies.
-- `public/md/`: raw Markdown copies for direct AI access.
-- `public/llms.txt`: Markdown docs index.
-- `public/llms-full.txt`: concatenated Markdown bundle.
-- `package.json`, `astro.config.mjs`, `src/content.config.ts`, and
-  `tsconfig.json`: local Starlight runtime files.
-
-When generating Starlight copies, Codocia may sanitize frontmatter so Starlight
-can parse it. It preserves `title` and valid `covers` metadata in the generated
-copy, but it does not rewrite the source Markdown in `docs/`. Raw source
-Markdown remains available under `public/md/`.
-
-## Validation
-
-- Run `codocia check --base main` before committing docs.
-- Run `codocia site build` after changing site generation logic.
-- Run `codocia site serve` and request the local URL when changing dev-server
-  behavior.
-- Run `codocia serve --plain` and request the local URL when changing the
-  no-Node fallback server.
-- If the diff is formatting-only, comment-only, test-only, or internal-only,
-  keep prose unchanged and refresh the snapshot after review.
-- A passing snapshot check means file hashes are current; it does not prove the
-  prose is complete. Do not treat a passing `codocia check` as permission to
-  keep bulk-generated, low-information docs.
-- Review whether the chosen density tier matches the change risk and blast
-  radius before committing.
-
-## Final Response
-
-When you finish a Codocia docs maintenance task, report:
-
-- docs pages changed;
-- source files or diffs reviewed;
-- whether `docs/.codocia-snapshot.json` changed;
-- validation commands and their results;
-- snapshot-only decisions and the reason;
-- remaining docs gaps or intentionally deferred coverage.
+`codocia drift init|snapshot|check` keeps the older in-repository workflow for
+`docs/` pages with `covers` frontmatter. `codocia site` and `codocia serve`
+render any Markdown directory with Starlight (`--docs <book>/out`).

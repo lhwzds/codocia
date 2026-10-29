@@ -1,5 +1,7 @@
 //! Library API for Codocia.
 
+pub mod book;
+
 use anyhow::{Context, Result, bail};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -1039,7 +1041,7 @@ fn push_indented_diff(message: &mut String, diff: &str, indent: &str) {
     }
 }
 
-fn current_commit(workspace: &Path) -> Result<String> {
+pub(crate) fn current_commit(workspace: &Path) -> Result<String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(workspace)
@@ -1058,7 +1060,7 @@ fn hash_file(path: &Path) -> Result<String> {
     Ok(stable_hash_hex(&bytes))
 }
 
-fn stable_hash_hex(bytes: &[u8]) -> String {
+pub(crate) fn stable_hash_hex(bytes: &[u8]) -> String {
     let mut hash = 0xcbf29ce484222325_u64;
     for byte in bytes {
         hash ^= u64::from(*byte);
@@ -1067,7 +1069,7 @@ fn stable_hash_hex(bytes: &[u8]) -> String {
     format!("{hash:016x}")
 }
 
-fn glob_matches(pattern: &str, path: &Path) -> bool {
+pub(crate) fn glob_matches(pattern: &str, path: &Path) -> bool {
     let value = path.to_string_lossy().replace('\\', "/");
     glob_match_segments(
         &pattern.split('/').collect::<Vec<_>>(),
@@ -1340,7 +1342,7 @@ fn same_path_if_exists(left: &Path, right: &Path) -> Result<bool> {
     Ok(left.canonicalize()? == right.canonicalize()?)
 }
 
-fn write_file(path: PathBuf, content: &[u8]) -> Result<()> {
+pub(crate) fn write_file(path: PathBuf, content: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
