@@ -33,7 +33,9 @@ first quality bar:
   heading, no marketing.
 - Explain each mechanism on exactly one page. Other pages name it in one
   clause and link there with `[[slug]]`; reviewers flag the same idea
-  re-explained on three or four pages as the most common padding.
+  re-explained on three or four pages as the most common padding. `check`
+  warns when notes on different pages cite the same code two or more
+  times: keep that explanation on one page and link to it.
 - Default page budgets scale with the code (`init` sets `max_pages` to 4,
   6 or 8); a small library rarely needs more than four pages.
 

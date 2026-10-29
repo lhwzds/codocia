@@ -1460,6 +1460,9 @@ pub fn check_book(book: &Book, notes: &[Note]) -> Result<Report> {
             book.max_pages
         ));
     }
+    for warning in repetition_warnings(notes) {
+        report.warnings.push(warning);
+    }
     let book_words: usize = notes.iter().map(|n| word_units(&n.body)).sum();
     if book.max_words > 0 && book_words > book.max_words {
         report.warnings.push(format!(
@@ -1547,6 +1550,56 @@ pub fn check_book(book: &Book, notes: &[Note]) -> Result<Report> {
         }
     }
     Ok(report)
+}
+
+/// Notes on different pages that cite the same code twice or more (ranges
+/// overlapping by at least half) usually explain the same mechanism twice.
+/// One shared range is an ordinary cross-reference and is not reported.
+fn repetition_warnings(notes: &[Note]) -> Vec<String> {
+    let ranges: Vec<Vec<(&str, usize, usize)>> = notes
+        .iter()
+        .map(|n| {
+            n.evidence
+                .iter()
+                .filter_map(|e| match &e.target {
+                    EvidenceRef::File {
+                        path,
+                        lines: Some((a, b)),
+                    } => Some((path.as_str(), *a, *b)),
+                    _ => None,
+                })
+                .collect()
+        })
+        .collect();
+    let mut out = Vec::new();
+    for i in 0..notes.len() {
+        for j in i + 1..notes.len() {
+            if notes[i].page == notes[j].page {
+                continue;
+            }
+            let mut shared = Vec::new();
+            for &(f1, a1, b1) in &ranges[i] {
+                for &(f2, a2, b2) in &ranges[j] {
+                    let overlap = b1.min(b2) as isize - a1.max(a2) as isize + 1;
+                    let shorter = (b1 - a1 + 1).min(b2 - a2 + 1) as isize;
+                    if f1 == f2 && overlap > 0 && overlap * 2 >= shorter {
+                        shared.push(format!("{f1}:{}-{}", a1.max(a2), b1.min(b2)));
+                    }
+                }
+            }
+            if shared.len() >= 2 {
+                out.push(format!(
+                    "{}/{} and {}/{} cite the same code ({}); explain it on one page and link from the other",
+                    notes[i].page,
+                    notes[i].id,
+                    notes[j].page,
+                    notes[j].id,
+                    shared.join(", ")
+                ));
+            }
+        }
+    }
+    out
 }
 
 fn print_report(report: &Report) {
@@ -2471,6 +2524,34 @@ mod tests {
         assert!(inventory.files.keys().all(|p| !p.starts_with("docs/")));
         rebase(&book).unwrap();
         assert_eq!(load_book(&book).unwrap().commit, pinned);
+    }
+
+    #[test]
+    fn repeated_explanations_across_pages_are_flagged() {
+        let ev = |p: &str, a: usize, b: usize| Evidence {
+            target: EvidenceRef::File {
+                path: p.to_string(),
+                lines: Some((a, b)),
+            },
+            pin: None,
+        };
+        let note = |page: &str, id: &str, evidence: Vec<Evidence>| Note {
+            page: page.to_string(),
+            id: id.to_string(),
+            title: String::new(),
+            order: None,
+            evidence,
+            body: "x".to_string(),
+        };
+        let notes = vec![
+            note("a", "one", vec![ev("x.rs", 10, 20), ev("y.rs", 1, 9)]),
+            note("b", "two", vec![ev("x.rs", 12, 22), ev("y.rs", 2, 8)]),
+            note("c", "three", vec![ev("x.rs", 15, 16)]),
+            note("a", "four", vec![ev("x.rs", 10, 20), ev("y.rs", 1, 9)]),
+        ];
+        let warnings = repetition_warnings(&notes);
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(warnings.iter().all(|w| w.contains("b/two")));
     }
 
     #[test]
