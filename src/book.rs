@@ -503,8 +503,19 @@ fn symbol_warnings(repo: &Path, tracked: &[String], note: &Note) -> Vec<String> 
         }
         if span.contains('/') {
             let path = span.trim_end_matches('/');
-            let looks_like_path =
-                !span.contains(' ') && !span.starts_with("http") && !span.contains(['*', '{', '<']);
+            // Only a directory (`a/b/`) or a file name with an extension
+            // (`a/b.py`) is checked; `sgl.system/user` is a list of symbols.
+            let last = path.rsplit('/').next().unwrap_or(path);
+            let named_like_file = span.ends_with('/')
+                || last.rsplit_once('.').is_some_and(|(stem, ext)| {
+                    !stem.is_empty()
+                        && (1..=5).contains(&ext.len())
+                        && ext.chars().all(|c| c.is_ascii_alphanumeric())
+                });
+            let looks_like_path = named_like_file
+                && !span.contains(' ')
+                && !span.starts_with("http")
+                && !span.contains(['*', '{', '<']);
             if looks_like_path && !path.is_empty() && !repo.join(path).exists() {
                 // Accept shortened paths such as `managers/scheduler.py`.
                 let file_suffix = format!("/{path}");
@@ -2262,6 +2273,13 @@ mod tests {
         assert_eq!(warnings.len(), 2, "{warnings:?}");
         assert!(warnings[0].contains("run_engine_loop"));
         assert!(warnings[1].contains("missing.rs"));
+
+        wrong.body = "`sgl.system/user/assistant` and `prefill|decode` are not paths.".to_string();
+        let warnings = symbol_warnings(&repo, &tracked_files(&repo).unwrap(), &wrong);
+        assert!(
+            warnings.iter().all(|w| !w.contains("does not exist")),
+            "{warnings:?}"
+        );
     }
 
     #[test]
