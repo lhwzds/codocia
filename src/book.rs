@@ -907,12 +907,23 @@ pub fn accept(book_dir: &Path, targets: &[String], force: bool) -> Result<()> {
                 let old = git_file_at(&repo, &book.commit, old_path);
                 let new =
                     fs::read_to_string(repo.join(path)).with_context(|| format!("read {path}"))?;
-                let old_lines = old.as_deref().map(|text| cited_lines(text, *lines));
+                let old_lines = old
+                    .as_deref()
+                    .and_then(|text| pinned_lines(text, *lines, item.pin.as_deref()));
                 let new_lines = cited_lines(&new, *lines);
                 println!("{name}: {}", render_evidence(item));
                 print_excerpt("before", old_lines.as_deref());
                 print_excerpt("after", Some(&new_lines));
-                if !force && let Some(old_lines) = &old_lines {
+                if !force && old_lines.is_none() {
+                    println!(
+                        "{name}: {} cannot be compared with its pinned version; check the range, then accept --force",
+                        render_evidence(&Evidence {
+                            target: item.target.clone(),
+                            pin: None
+                        })
+                    );
+                    bad = true;
+                } else if !force && let Some(old_lines) = &old_lines {
                     let old_nonblank: Vec<_> = old_lines
                         .iter()
                         .map(|s| s.trim())
@@ -978,18 +989,37 @@ fn cited_lines(text: &str, range: Option<(usize, usize)>) -> Vec<&str> {
     }
 }
 
-fn print_excerpt(label: &str, lines: Option<&[&str]>) {
-    println!("  {label}:");
-    match lines {
-        Some(lines) => {
-            for line in lines.iter().take(12) {
-                println!("    {line}");
-            }
-            if lines.len() > 12 {
-                println!("    ...");
+fn pinned_lines<'a>(
+    text: &'a str,
+    range: Option<(usize, usize)>,
+    pin: Option<&str>,
+) -> Option<Vec<&'a str>> {
+    let all: Vec<_> = text.lines().collect();
+    if let (Some((a, b)), Some(pin)) = (range, pin) {
+        let len = b - a + 1;
+        if len <= all.len() {
+            for window in all.windows(len) {
+                if hash_lines(window) == pin {
+                    return Some(window.to_vec());
+                }
             }
         }
-        None => println!("    (unavailable)"),
+    }
+    let fallback = cited_lines(text, range);
+    (!fallback.is_empty()).then_some(fallback)
+}
+
+fn print_excerpt(label: &str, lines: Option<&[&str]>) {
+    let Some(lines) = lines else {
+        println!("  {label}: (unavailable)");
+        return;
+    };
+    println!("  {label}:");
+    for line in lines.iter().take(12) {
+        println!("    {line}");
+    }
+    if lines.len() > 12 {
+        println!("    ...");
     }
 }
 
@@ -3289,6 +3319,122 @@ mod tests {
         accept(&book, &["loop".into()], true).unwrap();
         check(&book, None).unwrap();
         assert!(accept(&book, &["unknown".into()], true).is_err());
+    }
+
+    #[test]
+    fn accept_finds_moved_before_by_pin_and_requires_available_before() {
+        if let Some(book) = std::env::var_os("CODOCIA_MOVED_ACCEPT_BOOK") {
+            let result = accept(Path::new(&book), &["overview/loop".into()], false);
+            if std::env::var_os("CODOCIA_EXPECT_ACCEPT").is_some() {
+                result.unwrap();
+            } else {
+                assert!(result.is_err());
+            }
+            return;
+        }
+        let run = |book: &Path, success: bool| {
+            let mut cmd = Command::new(std::env::current_exe().unwrap());
+            cmd.args([
+                "--exact",
+                "book::tests::accept_finds_moved_before_by_pin_and_requires_available_before",
+                "--nocapture",
+            ])
+            .env("CODOCIA_MOVED_ACCEPT_BOOK", book);
+            if success {
+                cmd.env("CODOCIA_EXPECT_ACCEPT", "1");
+            }
+            let output = cmd.output().unwrap();
+            let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+            assert!(output.status.success(), "{stdout} {:?}", output.stderr);
+            stdout
+        };
+        for changed in [false, true] {
+            let (repo, _) = fixture();
+            let path = repo.join("src/core/engine.rs");
+            fs::write(
+                &path,
+                "fn main() {\n    let retries = 5;\n    send(retries);\n}\n",
+            )
+            .unwrap();
+            git(&repo, &["add", "src/core/engine.rs"]);
+            git(
+                &repo,
+                &[
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "commit",
+                    "-qm",
+                    "main",
+                ],
+            );
+            // Initialize after the commit so the book's pinned version contains the code.
+            let book = init_in_repo(&repo);
+            add(&book, "loop", &["src/core/engine.rs:2-3"], "x").unwrap();
+            fs::write(
+                &path,
+                "// a\n// b\nfn main() {\n    let retries = 5;\n    send(retries);\n}\n",
+            )
+            .unwrap();
+            check(&book, None).unwrap();
+            assert!(
+                render_note(&load_notes(&load_book(&book).unwrap()).unwrap()[0])
+                    .contains("src/core/engine.rs:4-5")
+            );
+            if changed {
+                fs::write(
+                    &path,
+                    "// a\n// b\nfn main() {\n    let retries = 5;\n    send_again(retries);\n}\n",
+                )
+                .unwrap();
+            } else {
+                fs::write(
+                    &path,
+                    "fn other() {\n    unrelated();\n    stuff();\n    more();\n}\n",
+                )
+                .unwrap();
+            }
+            let stdout = run(&book, changed);
+            assert!(
+                stdout.contains("before:\n        let retries = 5;\n        send(retries);"),
+                "{stdout}"
+            );
+            if !changed {
+                assert!(stdout.contains("now covers different code"), "{stdout}");
+                accept(&book, &["overview/loop".into()], true).unwrap();
+            } else {
+                assert!(stdout.contains("accepted overview/loop"), "{stdout}");
+            }
+        }
+
+        let (repo, book) = fixture();
+        let path = repo.join("new.rs");
+        fs::write(&path, "old\n").unwrap();
+        add(&book, "loop", &["new.rs:1-1"], "x").unwrap();
+        fs::write(&path, "new\n").unwrap();
+        let stdout = run(&book, false);
+        assert!(stdout.contains("before: (unavailable)"), "{stdout}");
+        assert!(stdout.contains("overview/loop: new.rs:1 cannot be compared with its pinned version; check the range, then accept --force"), "{stdout}");
+        accept(&book, &["overview/loop".into()], true).unwrap();
+    }
+
+    #[test]
+    fn pinned_lines_uses_first_match_and_falls_back() {
+        let pin = hash_lines(&["wanted", "code"]);
+        assert_eq!(
+            pinned_lines(
+                "wanted\ncode\nother\nwanted\ncode\n",
+                Some((3, 4)),
+                Some(&pin)
+            ),
+            Some(vec!["wanted", "code"])
+        );
+        assert_eq!(
+            pinned_lines("old\ntext\n", Some((1, 2)), Some(&pin)),
+            Some(vec!["old", "text"])
+        );
+        assert_eq!(pinned_lines("old\n", Some((2, 3)), Some(&pin)), None);
     }
 
     #[test]
