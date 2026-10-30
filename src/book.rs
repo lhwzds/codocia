@@ -221,7 +221,7 @@ pub fn init(options: &InitOptions) -> Result<()> {
     println!(
         "created book at {} for {} @ {}",
         book_dir.display(),
-        book.repo,
+        repo.display(),
         short(&book.commit)
     );
     println!("next: edit {BOOK_FILE} (pages, ignore), then run `codocia status`");
