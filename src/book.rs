@@ -1137,15 +1137,15 @@ pub fn check(book_dir: &Path, page: Option<&str>) -> Result<()> {
 }
 
 // Validate implicit output paths before following citations or making any writes.
-fn validate_implicit_output(repo: &Path, out: &Path) -> Result<()> {
+fn validate_implicit_output(anchor: &Path, out: &Path, location: &str) -> Result<()> {
     let refuse = || {
         anyhow::anyhow!(
-            "{}: output directory resolves outside the repository; use --out to choose an external directory",
+            "{}: output directory resolves outside the {location}; use --out to choose an external directory",
             out.display()
         )
     };
-    let relative = out.strip_prefix(repo).map_err(|_| refuse())?;
-    let mut current = repo.to_path_buf();
+    let relative = out.strip_prefix(anchor).map_err(|_| refuse())?;
+    let mut current = anchor.to_path_buf();
     for component in relative.components() {
         match component {
             Component::Normal(part) => current.push(part),
@@ -1154,7 +1154,8 @@ fn validate_implicit_output(repo: &Path, out: &Path) -> Result<()> {
         }
         match fs::symlink_metadata(&current) {
             Ok(metadata) => {
-                if metadata.file_type().is_symlink() || !current.canonicalize()?.starts_with(repo) {
+                if metadata.file_type().is_symlink() || !current.canonicalize()?.starts_with(anchor)
+                {
                     return Err(refuse());
                 }
             }
@@ -1168,7 +1169,8 @@ fn validate_implicit_output(repo: &Path, out: &Path) -> Result<()> {
 pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
     let book = load_book(book_dir)?;
     let repo = book.repo_path().canonicalize()?;
-    let validate_out = out.is_none() && (book.out.is_some() || book.dir == repo.join(".codocia"));
+    let implicit = out.is_none();
+    let repository_output = book.out.is_some() || book.dir == repo.join(".codocia");
     let out = out
         .or_else(|| book.out.as_ref().map(|path| repo.join(path)))
         .unwrap_or_else(|| {
@@ -1178,8 +1180,13 @@ pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
                 book.dir.join("out")
             }
         });
-    if validate_out {
-        validate_implicit_output(&repo, &out)?;
+    if implicit {
+        let (anchor, location) = if repository_output {
+            (&repo, "repository")
+        } else {
+            (&book.dir, "book")
+        };
+        validate_implicit_output(anchor, &out, location)?;
     }
     follow_and_report(&book)?;
     let notes = load_notes(&book)?;
@@ -3213,6 +3220,53 @@ mod tests {
             "{error}"
         );
         assert_eq!(fs::read_to_string(outside).unwrap(), content);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_default_output_rejects_symlink_but_explicit_out_works() {
+        use std::os::unix::fs::symlink;
+        let (repo, _) = fixture();
+        init(&InitOptions {
+            repo: repo.clone(),
+            book: Some(repo.clone()),
+            title: Some("Legacy".into()),
+            lang: "en".into(),
+        })
+        .unwrap();
+        let book = find_book_from(&repo).unwrap();
+        assert_eq!(load_book(&book).unwrap().repo, ".");
+        let outside = repo.parent().unwrap().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let manifest = format!("{MANIFEST_HEADER}\nvictim.md\n");
+        fs::write(outside.join(BUILD_MARKER), &manifest).unwrap();
+        fs::write(outside.join("victim.md"), "keep").unwrap();
+        symlink("../outside", repo.join("out")).unwrap();
+        let before = fs::read(book.join(BOOK_FILE)).unwrap();
+
+        let error = build(&book, None, false).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            format!(
+                "{}: output directory resolves outside the book; use --out to choose an external directory",
+                book.canonicalize().unwrap().join("out").display()
+            )
+        );
+        assert_eq!(fs::read(book.join(BOOK_FILE)).unwrap(), before);
+        assert_eq!(
+            fs::read_to_string(outside.join("victim.md")).unwrap(),
+            "keep"
+        );
+        assert_eq!(
+            fs::read_to_string(outside.join(BUILD_MARKER)).unwrap(),
+            manifest
+        );
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 2);
+
+        build(&book, Some(outside.clone()), false).unwrap();
+        assert!(!outside.join("victim.md").exists());
+        assert!(outside.join("index.md").is_file());
+        assert!(outside.join(BUILD_MARKER).is_file());
     }
 
     #[cfg(unix)]
