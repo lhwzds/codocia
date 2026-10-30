@@ -6,7 +6,7 @@ use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "codocia")]
+#[command(name = "codocia", version)]
 #[command(about = "Turn what an agent learns about a codebase into small, source-grounded docs.")]
 struct Cli {
     #[command(subcommand)]
