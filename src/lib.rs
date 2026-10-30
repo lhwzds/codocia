@@ -5,9 +5,11 @@ pub mod structure;
 pub mod translate;
 
 use anyhow::{Context, Result, bail};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub fn skill_prompt() -> &'static str {
     include_str!("../SKILL.md")
@@ -99,7 +101,34 @@ pub(crate) fn write_file(path: PathBuf, content: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
-    fs::write(&path, content).with_context(|| format!("write {}", path.display()))?;
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    let name = path.file_name().context("destination has no file name")?;
+    let (temp, mut file) = loop {
+        let mut temp_name = std::ffi::OsString::from(".");
+        temp_name.push(name);
+        temp_name.push(format!(
+            ".tmp-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let temp = parent.join(temp_name);
+        match OpenOptions::new().write(true).create_new(true).open(&temp) {
+            Ok(file) => break (temp, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error).with_context(|| format!("write {}", path.display())),
+        }
+    };
+    let result = (|| -> std::io::Result<()> {
+        file.write_all(content)?;
+        file.flush()?;
+        drop(file);
+        fs::rename(&temp, &path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result.with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 

@@ -944,10 +944,22 @@ pub fn accept(book_dir: &Path, targets: &[String], force: bool) -> Result<()> {
                         .map(|s| s.trim())
                         .filter(|s| s.chars().any(char::is_alphanumeric))
                         .collect();
-                    let new_trimmed: BTreeSet<_> = new_lines.iter().map(|s| s.trim()).collect();
+                    let mut new_counts = BTreeMap::new();
+                    for line in &new_lines {
+                        *new_counts.entry(line.trim()).or_insert(0usize) += 1;
+                    }
                     let matches = old_nonblank
                         .iter()
-                        .filter(|line| new_trimmed.contains(**line))
+                        .filter(|line| {
+                            if let Some(count) = new_counts.get_mut(**line)
+                                && *count > 0
+                            {
+                                *count -= 1;
+                                true
+                            } else {
+                                false
+                            }
+                        })
                         .count();
                     if if old_nonblank.is_empty() {
                         old_lines.join("\n").trim() != new_lines.join("\n").trim()
@@ -3238,6 +3250,107 @@ mod tests {
         .unwrap();
         assert!(accept(&book, &["overview/auth".into()], false).is_err());
         assert_eq!(fs::read(note).unwrap(), before);
+    }
+
+    #[test]
+    fn accept_counts_each_new_line_only_once() {
+        let (repo, book) = fixture();
+        let source = repo.join("src/core/engine.rs");
+        fs::write(&source, "fn authorize() {\n    trace();\n    trace();\n    trace();\n    trace();\n    check();\n}\n").unwrap();
+        git(&repo, &["add", "."]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "authorize",
+            ],
+        );
+        let mut loaded = load_book(&book).unwrap();
+        loaded.commit = current_commit(&repo).unwrap();
+        fs::write(book.join(BOOK_FILE), render_book(&loaded)).unwrap();
+        add(&book, "auth", &["src/core/engine.rs:1-7"], "Authorization.").unwrap();
+        let note = note_path(&loaded, "overview", "auth");
+        let before = fs::read(&note).unwrap();
+        fs::write(&source, "fn archive() {\n    trace();\n    move_files();\n    rotate();\n    compress();\n    upload();\n}\n").unwrap();
+        assert!(accept(&book, &["overview/auth".into()], false).is_err());
+        assert_eq!(fs::read(note).unwrap(), before);
+    }
+
+    #[test]
+    fn failed_atomic_write_removes_temporary_file() {
+        let dir = temp_dir("failed-write");
+        let destination = dir.join("destination");
+        fs::create_dir(&destination).unwrap();
+        assert!(write_file(destination.clone(), b"data").is_err());
+        let entries: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(entries, vec![destination]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn note_replace_and_check_do_not_modify_hard_links() {
+        let (repo, _) = fixture();
+        let book = init_in_repo(&repo);
+        add(&book, "loop", &["README.md"], "Original.").unwrap();
+        let loaded = load_book(&book).unwrap();
+        let path = note_path(&loaded, "overview", "loop");
+        let outside = repo.parent().unwrap().join("outside-note.md");
+        let original = fs::read(&path).unwrap();
+        fs::write(&outside, &original).unwrap();
+        fs::remove_file(&path).unwrap();
+        fs::hard_link(&outside, &path).unwrap();
+        note_add(&NoteAddOptions {
+            book: book.clone(),
+            page: "overview".into(),
+            id: "loop".into(),
+            title: None,
+            order: None,
+            evidence: vec![],
+            add_evidence: vec![],
+            body: "Replaced.".into(),
+            replace: true,
+        })
+        .unwrap();
+        assert_eq!(fs::read(&outside).unwrap(), original);
+        assert_ne!(fs::read(&path).unwrap(), original);
+
+        let mut note = load_notes(&loaded).unwrap().remove(0);
+        note.evidence[0].pin = None;
+        let unpinned = render_note(&note);
+        fs::write(&outside, &unpinned).unwrap();
+        fs::remove_file(&path).unwrap();
+        fs::hard_link(&outside, &path).unwrap();
+        check(&book, None).unwrap();
+        assert_eq!(fs::read_to_string(&outside).unwrap(), unpinned);
+        assert!(load_notes(&loaded).unwrap()[0].evidence[0].pin.is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn build_does_not_modify_hard_linked_manifest() {
+        let (repo, _) = fixture();
+        let book = init_in_repo(&repo);
+        add(&book, "loop", &["README.md"], "Demo.").unwrap();
+        let out = repo.join("docs");
+        fs::create_dir_all(&out).unwrap();
+        let outside = repo.parent().unwrap().join("outside-manifest");
+        let manifest = format!("{MANIFEST_HEADER}\n");
+        fs::write(&outside, &manifest).unwrap();
+        fs::hard_link(&outside, out.join(BUILD_MARKER)).unwrap();
+        build(&book, Some(out.clone()), false).unwrap();
+        assert_eq!(fs::read_to_string(outside).unwrap(), manifest);
+        assert_ne!(
+            fs::read_to_string(out.join(BUILD_MARKER)).unwrap(),
+            manifest
+        );
     }
 
     fn init_in_repo(repo: &Path) -> PathBuf {
