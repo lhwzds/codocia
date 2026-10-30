@@ -192,6 +192,12 @@ pub fn render(book: &Book, map: &StructureMap, page_link: impl Fn(&str) -> Strin
                         .next()
                         .unwrap_or(&area.bucket.dir)
                 ),
+                BucketKind::Files if area.bucket.dir.is_empty() => if zh {
+                    "（根目录文件）"
+                } else {
+                    "(root files)"
+                }
+                .to_string(),
                 BucketKind::Files => (if zh { "（直接文件）" } else { "(files)" }).to_string(),
                 BucketKind::Rest => (if zh {
                     "（其余子目录）"
