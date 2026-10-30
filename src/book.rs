@@ -1117,8 +1117,51 @@ pub fn check(book_dir: &Path, page: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+// Validate implicit output paths before following citations or making any writes.
+fn validate_implicit_output(repo: &Path, out: &Path) -> Result<()> {
+    let refuse = || {
+        anyhow::anyhow!(
+            "{}: output directory resolves outside the repository; use --out to choose an external directory",
+            out.display()
+        )
+    };
+    let relative = out.strip_prefix(repo).map_err(|_| refuse())?;
+    let mut current = repo.to_path_buf();
+    for component in relative.components() {
+        match component {
+            Component::Normal(part) => current.push(part),
+            Component::CurDir => continue,
+            _ => return Err(refuse()),
+        }
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !current.canonicalize()?.starts_with(repo) {
+                    return Err(refuse());
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
 pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
     let book = load_book(book_dir)?;
+    let repo = book.repo_path().canonicalize()?;
+    let validate_out = out.is_none() && (book.out.is_some() || book.dir == repo.join(".codocia"));
+    let out = out
+        .or_else(|| book.out.as_ref().map(|path| repo.join(path)))
+        .unwrap_or_else(|| {
+            if book.dir == repo.join(".codocia") {
+                repo.join("docs")
+            } else {
+                book.dir.join("out")
+            }
+        });
+    if validate_out {
+        validate_implicit_output(&repo, &out)?;
+    }
     follow_and_report(&book)?;
     let notes = load_notes(&book)?;
     let report = check_book(&book, &notes)?;
@@ -1130,16 +1173,6 @@ pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
     }
     let mut book = book;
     move_book_commit(&mut book)?;
-    let repo = book.repo_path().canonicalize()?;
-    let out = out
-        .or_else(|| book.out.as_ref().map(|path| repo.join(path)))
-        .unwrap_or_else(|| {
-            if book.dir == repo.join(".codocia") {
-                repo.join("docs")
-            } else {
-                book.dir.join("out")
-            }
-        });
     fs::create_dir_all(&out).with_context(|| format!("create {}", out.display()))?;
     let out = out.canonicalize()?;
     // Inside the repository: link sources relatively and name the index
@@ -3095,6 +3128,96 @@ mod tests {
             "{error}"
         );
         assert_eq!(fs::read_to_string(outside).unwrap(), content);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn build_rejects_symlinked_default_output_without_touching_anything() {
+        use std::os::unix::fs::symlink;
+        let (repo, _) = fixture();
+        let book = init_in_repo(&repo);
+        let outside = temp_dir("default-output-outside");
+        let manifest = format!("{MANIFEST_HEADER}\nvictim\n");
+        fs::write(outside.join(BUILD_MARKER), &manifest).unwrap();
+        fs::write(outside.join("victim"), "keep").unwrap();
+        symlink(&outside, repo.join("docs")).unwrap();
+        let before = fs::read(book.join(BOOK_FILE)).unwrap();
+        let error = build(&book, None, false).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            format!(
+                "{}: output directory resolves outside the repository; use --out to choose an external directory",
+                repo.canonicalize().unwrap().join("docs").display()
+            )
+        );
+        assert_eq!(fs::read(book.join(BOOK_FILE)).unwrap(), before);
+        assert_eq!(fs::read_to_string(outside.join("victim")).unwrap(), "keep");
+        assert_eq!(
+            fs::read_to_string(outside.join(BUILD_MARKER)).unwrap(),
+            manifest
+        );
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn build_rejects_symlinked_configured_output_but_explicit_out_works() {
+        use std::os::unix::fs::symlink;
+        let (repo, _) = fixture();
+        let book = init_in_repo(&repo);
+        let path = book.join(BOOK_FILE);
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(
+            &path,
+            text.replace("repo: ..\n", "repo: ..\nout: alias/generated\n"),
+        )
+        .unwrap();
+        let outside = temp_dir("configured-output-outside");
+        symlink(&outside, repo.join("alias")).unwrap();
+        let error = build(&book, None, false).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            format!(
+                "{}: output directory resolves outside the repository; use --out to choose an external directory",
+                repo.canonicalize()
+                    .unwrap()
+                    .join("alias/generated")
+                    .display()
+            )
+        );
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        build(&book, Some(outside.clone()), false).unwrap();
+        assert!(outside.join("index.md").is_file());
+        assert!(outside.join(BUILD_MARKER).is_file());
+        assert!(!outside.join("generated").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn build_rejects_internal_and_dangling_output_symlinks() {
+        use std::os::unix::fs::symlink;
+        let (repo, _) = fixture();
+        let book = init_in_repo(&repo);
+        let docs = repo.join("docs");
+        let target = repo.join("target-output");
+        fs::create_dir(&target).unwrap();
+        symlink(&target, &docs).unwrap();
+        assert!(
+            build(&book, None, false)
+                .unwrap_err()
+                .to_string()
+                .contains("output directory resolves outside the repository")
+        );
+        assert_eq!(fs::read_dir(&target).unwrap().count(), 0);
+        fs::remove_file(&docs).unwrap();
+        symlink(repo.join("missing"), &docs).unwrap();
+        assert!(
+            build(&book, None, false)
+                .unwrap_err()
+                .to_string()
+                .contains("output directory resolves outside the repository")
+        );
+        assert!(!repo.join("missing").exists());
     }
 
     #[cfg(unix)]

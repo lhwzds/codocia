@@ -101,7 +101,7 @@ enum NoteCommand {
         /// Section heading; empty for a page introduction. Kept on --replace if omitted.
         #[arg(long)]
         title: Option<String>,
-        /// Sort key inside the page (default 50).
+        /// Sort key inside the page. Without --order, a new note is placed after the page's existing notes.
         #[arg(long)]
         order: Option<i64>,
         /// path[:start-end], commit:<sha>, pr:<n>, or issue:<n>. Repeatable.
