@@ -2623,7 +2623,9 @@ pub fn render_site(
         book.label("Generated from"),
         book.remote.clone().unwrap_or_else(|| {
             // Never publish a local absolute path; name the repository only.
-            Path::new(&book.repo)
+            book.repo_path()
+                .canonicalize()
+                .unwrap_or_else(|_| PathBuf::from(&book.repo))
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default()
@@ -2999,6 +3001,33 @@ mod tests {
         fs::write(book.join(BOOK_FILE), rendered).unwrap();
         let again = render_book(&load_book(&book).unwrap());
         assert_eq!(again, fs::read_to_string(book.join(BOOK_FILE)).unwrap());
+    }
+
+    #[test]
+    fn in_repo_index_footer_names_repository_without_remote() {
+        let root = temp_dir("demo-repo-name");
+        let repo = root.join("demo");
+        fs::create_dir_all(&repo).unwrap();
+        fs::write(repo.join("README.md"), "# Demo\n").unwrap();
+        git(&repo, &["init", "-q"]);
+        git(&repo, &["add", "."]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "initial",
+            ],
+        );
+        let book = init_in_repo(&repo);
+        assert!(git_remote_url(&repo).is_none());
+        build(&book, None, false).unwrap();
+        let index = fs::read_to_string(repo.join("docs/README.md")).unwrap();
+        assert!(index.contains("Generated from demo @ `"), "{index}");
     }
 
     #[test]
