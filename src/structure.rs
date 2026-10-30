@@ -33,7 +33,7 @@ pub struct StructureMap {
 
 pub fn build_map(book: &Book, notes: &[Note], max_areas: usize) -> Result<StructureMap> {
     let repo = book.repo_path();
-    let inventory = Inventory::scan(&repo, &book.ignore)?;
+    let inventory = Inventory::scan(&repo, &book.effective_ignore())?;
     let mut buckets = inventory.buckets(max_areas);
     buckets.sort_by(|a, b| a.dir.cmp(&b.dir).then(a.label().cmp(&b.label())));
 

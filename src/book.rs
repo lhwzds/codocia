@@ -103,7 +103,7 @@ pub struct Report {
 
 pub struct InitOptions {
     pub repo: PathBuf,
-    pub book: PathBuf,
+    pub book: Option<PathBuf>,
     pub title: Option<String>,
     pub lang: String,
 }
@@ -127,19 +127,55 @@ pub struct NoteAddOptions {
 // ---------------------------------------------------------------------------
 // Commands
 
+/// Default repository is the Git worktree root, or the current directory.
+pub fn default_repo() -> Result<PathBuf> {
+    let cwd = std::env::current_dir()?;
+    let output = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(&cwd)
+        .output();
+    match output {
+        Ok(output) if output.status.success() => Ok(PathBuf::from(
+            String::from_utf8_lossy(&output.stdout).trim(),
+        )),
+        _ => Ok(cwd),
+    }
+}
+
+/// Resolve an explicit book, or discover the nearest in-repository or legacy book.
+pub fn find_book(arg: Option<&Path>) -> Result<PathBuf> {
+    if let Some(path) = arg {
+        return Ok(path.to_path_buf());
+    }
+    find_book_from(&std::env::current_dir()?)
+}
+
+fn find_book_from(start: &Path) -> Result<PathBuf> {
+    for dir in start.ancestors() {
+        let candidate = dir.join(".codocia");
+        if candidate.join(BOOK_FILE).is_file() {
+            return Ok(candidate);
+        }
+        if dir.join(BOOK_FILE).is_file() && dir.join(NOTES_DIR).is_dir() {
+            return Ok(dir.to_path_buf());
+        }
+    }
+    bail!("no Codocia book found; run `codocia init` in the repository")
+}
+
 pub fn init(options: &InitOptions) -> Result<()> {
     let repo = options
         .repo
         .canonicalize()
         .with_context(|| format!("repository not found: {}", options.repo.display()))?;
     let commit = current_commit(&repo)?;
-    fs::create_dir_all(&options.book)
-        .with_context(|| format!("create {}", options.book.display()))?;
-    let book_dir = options.book.canonicalize()?;
-    if book_dir.starts_with(&repo) && book_dir != repo {
-        // Allowed, but the notes are then part of the repository's worktree.
-        eprintln!("note: the book lives inside the repository; add it to .gitignore if unwanted");
-    }
+    let requested_book = options
+        .book
+        .clone()
+        .unwrap_or_else(|| repo.join(".codocia"));
+    fs::create_dir_all(&requested_book)
+        .with_context(|| format!("create {}", requested_book.display()))?;
+    let book_dir = requested_book.canonicalize()?;
     let book_file = book_dir.join(BOOK_FILE);
     if book_file.exists() {
         bail!("{} already exists", book_file.display());
@@ -158,7 +194,11 @@ pub fn init(options: &InitOptions) -> Result<()> {
     let book = Book {
         dir: book_dir.clone(),
         title,
-        repo: repo.to_string_lossy().to_string(),
+        repo: match book_dir.strip_prefix(&repo) {
+            Ok(relative) if relative.as_os_str().is_empty() => ".".to_string(),
+            Ok(relative) => vec![".."; relative.components().count()].join("/"),
+            Err(_) => repo.to_string_lossy().to_string(),
+        },
         commit,
         remote: git_remote_url(&repo),
         lang: options.lang.clone(),
@@ -211,7 +251,7 @@ pub fn status(book_dir: &Path, max_buckets: usize, area: Option<&str>) -> Result
         "repo: {} @ {}{}",
         book.repo,
         short(&book.commit),
-        if !code_moved(&repo, &book.commit, &head, &book.ignore) {
+        if !code_moved(&repo, &book.commit, &head, &book.effective_ignore()) {
             String::new()
         } else {
             format!(" (repo HEAD is now {}; run `codocia check`)", short(&head))
@@ -267,7 +307,7 @@ pub fn status(book_dir: &Path, max_buckets: usize, area: Option<&str>) -> Result
         }
     );
 
-    let inventory = Inventory::scan(&repo, &book.ignore)?;
+    let inventory = Inventory::scan(&repo, &book.effective_ignore())?;
     let cited = cited_paths(&notes);
     let buckets = inventory.buckets(max_buckets);
     let covered_lines: usize = buckets
@@ -743,7 +783,7 @@ pub fn pin(book_dir: &Path, force: &[String]) -> Result<()> {
         }
     }
     let head = current_commit(&repo)?;
-    if code_moved(&repo, &book.commit, &head, &book.ignore) && force.is_empty() {
+    if code_moved(&repo, &book.commit, &head, &book.effective_ignore()) && force.is_empty() {
         println!(
             "repo HEAD {} differs from the pinned commit {}",
             short(&head),
@@ -767,7 +807,7 @@ pub fn rebase(book_dir: &Path) -> Result<()> {
     // Skip trailing commits that only add Codocia's generated docs or touch
     // translated files (README and README_CN.md), so the book pins the code
     // it describes rather than its own output.
-    let mut ignore = book.ignore.clone();
+    let mut ignore = book.effective_ignore();
     ignore.extend(crate::translate::paths(&book));
     let mut target = current_commit(&repo)?;
     while let Some(parent) = git_parent(&repo, &target) {
@@ -812,12 +852,18 @@ pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
         }
     }
     let mut book = book;
-    let out = out.unwrap_or_else(|| book.dir.join("out"));
+    let repo = book.repo_path().canonicalize()?;
+    let out = out.unwrap_or_else(|| {
+        if book.dir == repo.join(".codocia") {
+            repo.join("docs")
+        } else {
+            book.dir.join("out")
+        }
+    });
     fs::create_dir_all(&out).with_context(|| format!("create {}", out.display()))?;
     let out = out.canonicalize()?;
     // Inside the repository: link sources relatively and name the index
     // README.md so the folder renders on GitHub and in any checkout.
-    let repo = book.repo_path().canonicalize()?;
     let in_repo = out.starts_with(&repo);
     if let Ok(rel) = out.strip_prefix(&repo) {
         book.link_base = Some("../".repeat(rel.components().count()));
@@ -862,7 +908,8 @@ pub fn history(book_dir: &Path, limit: usize, window: usize) -> Result<()> {
         println!("no commits");
         return Ok(());
     }
-    let ignored = |path: &str| book.ignore.iter().any(|g| glob_matches(g, Path::new(path)));
+    let ignore = book.effective_ignore();
+    let ignored = |path: &str| ignore.iter().any(|g| glob_matches(g, Path::new(path)));
     println!(
         "{} commits from {} to {}",
         all.len(),
@@ -966,6 +1013,21 @@ pub fn history(book_dir: &Path, limit: usize, window: usize) -> Result<()> {
 // Loading and rendering book.md / notes
 
 impl Book {
+    /// Ignore the book itself as well as the user-configured patterns.
+    pub(crate) fn effective_ignore(&self) -> Vec<String> {
+        let mut ignore = self.ignore.clone();
+        if let Ok(repo) = self.repo_path().canonicalize()
+            && let Ok(relative) = self.dir.strip_prefix(repo)
+            && !relative.as_os_str().is_empty()
+        {
+            ignore.push(format!(
+                "{}/**",
+                relative.to_string_lossy().replace('\\', "/")
+            ));
+        }
+        ignore
+    }
+
     pub fn repo_path(&self) -> PathBuf {
         let path = PathBuf::from(&self.repo);
         if path.is_absolute() {
@@ -2544,12 +2606,202 @@ mod tests {
         let book = root.join("book");
         init(&InitOptions {
             repo: repo.clone(),
-            book: book.clone(),
+            book: Some(book.clone()),
             title: Some("Demo".to_string()),
             lang: "en".to_string(),
         })
         .unwrap();
         (repo, book)
+    }
+
+    fn init_in_repo(repo: &Path) -> PathBuf {
+        init(&InitOptions {
+            repo: repo.to_path_buf(),
+            book: None,
+            title: Some("Demo".into()),
+            lang: "en".into(),
+        })
+        .unwrap();
+        repo.join(".codocia")
+    }
+
+    #[test]
+    fn default_init_is_portable_and_explicit_nested_and_external_books_work() {
+        let (repo, external) = fixture();
+        let book = init_in_repo(&repo);
+        let text = fs::read_to_string(book.join(BOOK_FILE)).unwrap();
+        assert!(text.lines().any(|line| line == "repo: .."), "{text}");
+        assert!(!text.contains(&repo.to_string_lossy().to_string()));
+        assert_eq!(
+            load_book(&external).unwrap().repo,
+            repo.canonicalize().unwrap().to_string_lossy()
+        );
+        let nested = repo.join("nested/book");
+        init(&InitOptions {
+            repo: repo.clone(),
+            book: Some(nested.clone()),
+            title: None,
+            lang: "en".into(),
+        })
+        .unwrap();
+        assert_eq!(load_book(&nested).unwrap().repo, "../..");
+    }
+
+    // Spawn the test binary instead of changing the process-wide working directory:
+    // other tests run in parallel and may be using relative paths.
+    #[test]
+    fn discover_book_from_current_directory() {
+        if let Ok(expected) = std::env::var("CODOCIA_TEST_DISCOVERY") {
+            if expected == "missing" {
+                assert_eq!(
+                    find_book(None).unwrap_err().to_string(),
+                    "no Codocia book found; run `codocia init` in the repository"
+                );
+            } else {
+                assert_eq!(
+                    find_book(None).unwrap().canonicalize().unwrap(),
+                    PathBuf::from(expected).canonicalize().unwrap()
+                );
+            }
+            assert_eq!(
+                find_book(Some(Path::new("explicit"))).unwrap(),
+                PathBuf::from("explicit")
+            );
+            return;
+        }
+        let (repo, external) = fixture();
+        let book = init_in_repo(&repo);
+        let unrelated = temp_dir("unrelated");
+        for (cwd, expected) in [
+            (&repo.join("src/core"), book.to_str().unwrap()),
+            (&external, external.to_str().unwrap()),
+            (&unrelated, "missing"),
+        ] {
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "book::tests::discover_book_from_current_directory",
+                    "--nocapture",
+                ])
+                .env("CODOCIA_TEST_DISCOVERY", expected)
+                .current_dir(cwd)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{} {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[test]
+    fn in_repo_book_build_and_coverage_are_portable() {
+        let (repo, _) = fixture();
+        let book = init_in_repo(&repo);
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        git(&repo, &["add", ".codocia"]);
+        check(&book, None).unwrap();
+        build(&book, None, false).unwrap();
+        assert!(repo.join("docs/README.md").is_file());
+        let page = fs::read_to_string(repo.join("docs/01-overview.md")).unwrap();
+        assert!(page.contains("../src/core/engine.rs#L2-L4"), "{page}");
+        for entry in fs::read_dir(repo.join("docs")).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_file() {
+                let content = fs::read_to_string(path).unwrap();
+                assert!(
+                    !content.contains(&repo.canonicalize().unwrap().to_string_lossy().to_string())
+                );
+            }
+        }
+        let loaded = load_book(&book).unwrap();
+        let inventory = Inventory::scan(&loaded.repo_path(), &loaded.effective_ignore()).unwrap();
+        assert!(inventory.files.keys().any(|p| p == "src/core/engine.rs"));
+        assert!(inventory.files.keys().all(|p| !p.starts_with(".codocia/")));
+        let map = structure::build_map(&loaded, &load_notes(&loaded).unwrap(), 30).unwrap();
+        let rendered = structure::render(&loaded, &map, |s| s.to_string());
+        assert!(!rendered.contains(".codocia/"), "{rendered}");
+        status(&book, 30, None).unwrap();
+    }
+
+    #[test]
+    fn rebase_skips_book_and_generated_docs_commits() {
+        let (repo, _) = fixture();
+        let book = init_in_repo(&repo);
+        let original = load_book(&book).unwrap().commit;
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        build(&book, None, false).unwrap();
+        git(&repo, &["add", ".codocia", "docs"]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "book and generated docs",
+            ],
+        );
+        rebase(&book).unwrap();
+        assert_eq!(load_book(&book).unwrap().commit, original);
+        let note = book.join("notes/overview/loop.md");
+        let text = fs::read_to_string(&note).unwrap();
+        fs::write(
+            &note,
+            text.replace("`run` calls `step`.", "The engine runs."),
+        )
+        .unwrap();
+        git(&repo, &["add", ".codocia/notes/overview/loop.md"]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "edit note only",
+            ],
+        );
+        rebase(&book).unwrap();
+        assert_eq!(load_book(&book).unwrap().commit, original);
+        fs::write(repo.join("src/core/engine.rs"), "fn changed() {}\n").unwrap();
+        git(&repo, &["add", "src/core/engine.rs"]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "code",
+            ],
+        );
+        assert!(code_moved(
+            &repo,
+            &original,
+            &current_commit(&repo).unwrap(),
+            &load_book(&book).unwrap().effective_ignore()
+        ));
     }
 
     #[test]
@@ -2827,7 +3079,7 @@ mod tests {
         let book = root.join("book");
         init(&InitOptions {
             repo: repo.clone(),
-            book: book.clone(),
+            book: Some(book.clone()),
             title: None,
             lang: "en".to_string(),
         })

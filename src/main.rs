@@ -19,14 +19,14 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Create a book (notes + outline) for a repository. The repository is never modified.
+    /// Create a book (notes + outline) for a repository.
     Init {
         /// Repository to document.
-        #[arg(long, default_value = ".")]
-        repo: PathBuf,
-        /// Book directory to create; keep it outside the repository.
         #[arg(long)]
-        book: PathBuf,
+        repo: Option<PathBuf>,
+        /// Book directory to create (default: <repo>/.codocia).
+        #[arg(long)]
+        book: Option<PathBuf>,
         #[arg(long)]
         title: Option<String>,
         /// Output language for generated labels: en or zh.
@@ -35,8 +35,8 @@ enum Command {
     },
     /// Show pages, budgets, coverage areas, and check results.
     Status {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
         /// Maximum number of coverage areas to show.
         #[arg(long, default_value_t = 30)]
         areas: usize,
@@ -51,36 +51,36 @@ enum Command {
     },
     /// Pin new evidence and follow moved code; --force re-pins reviewed stale notes.
     Pin {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
         /// Notes (`page/id` or `id`) whose stale evidence was reviewed.
         #[arg(long = "force")]
         force: Vec<String>,
     },
     /// Move the book's pinned commit to the repository HEAD once check passes.
     Rebase {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
     },
     /// Record that translations match their current source (see `langs:` and `translations:`).
     Sync {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
         /// A language, `<lang>/book`, `<lang>/<page>/<id>`, or a file from `translations:`.
         targets: Vec<String>,
     },
     /// Validate evidence, links, and budgets.
     Check {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
         /// Only report problems of this page.
         #[arg(long)]
         page: Option<String>,
     },
     /// Mine git history for hot files, structural commits, and design changes.
     History {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
         #[arg(long, default_value_t = 15)]
         limit: usize,
         /// Recent commits scanned for hot files and wide commits.
@@ -89,22 +89,22 @@ enum Command {
     },
     /// Print the generated code structure: areas, dependencies, pages.
     Map {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
         #[arg(long, default_value_t = 30)]
         areas: usize,
     },
     /// Print one rendered page to stdout (`structure` for the generated map).
     Show {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
         page: String,
     },
     /// Compile notes into Markdown pages, index.md, and all.md.
     Build {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
-        /// Output directory (default: <book>/out).
+        #[arg(long)]
+        book: Option<PathBuf>,
+        /// Output directory (default: <repo>/docs for .codocia, otherwise <book>/out).
         #[arg(long)]
         out: Option<PathBuf>,
         /// Build even when check reports errors.
@@ -146,8 +146,8 @@ enum Command {
 enum NoteCommand {
     /// Save a note. Body comes from --body or stdin.
     Add {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
         #[arg(long)]
         page: String,
         #[arg(long)]
@@ -172,15 +172,15 @@ enum NoteCommand {
     },
     /// List notes with order, length, and file path.
     List {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
         #[arg(long)]
         page: Option<String>,
     },
     /// Delete a note (`page/id`).
     Rm {
-        #[arg(long, default_value = ".")]
-        book: PathBuf,
+        #[arg(long)]
+        book: Option<PathBuf>,
         name: String,
     },
 }
@@ -263,12 +263,17 @@ fn main() -> Result<()> {
             title,
             lang,
         }) => book::init(&book::InitOptions {
-            repo,
+            repo: match repo {
+                Some(repo) => repo,
+                None => book::default_repo()?,
+            },
             book,
             title,
             lang,
         }),
-        Some(Command::Status { book, areas, area }) => book::status(&book, areas, area.as_deref()),
+        Some(Command::Status { book, areas, area }) => {
+            book::status(&book::find_book(book.as_deref())?, areas, area.as_deref())
+        }
         Some(Command::Note {
             command:
                 NoteCommand::Add {
@@ -293,7 +298,7 @@ fn main() -> Result<()> {
                 }
             };
             book::note_add(&book::NoteAddOptions {
-                book,
+                book: book::find_book(book.as_deref())?,
                 page,
                 id,
                 title,
@@ -306,22 +311,28 @@ fn main() -> Result<()> {
         }
         Some(Command::Note {
             command: NoteCommand::List { book, page },
-        }) => book::note_list(&book, page.as_deref()),
+        }) => book::note_list(&book::find_book(book.as_deref())?, page.as_deref()),
         Some(Command::Note {
             command: NoteCommand::Rm { book, name },
-        }) => book::note_rm(&book, &name),
-        Some(Command::Pin { book, force }) => book::pin(&book, &force),
-        Some(Command::Rebase { book }) => book::rebase(&book),
-        Some(Command::Sync { book, targets }) => codocia::translate::sync(&book, &targets),
-        Some(Command::Check { book, page }) => book::check(&book, page.as_deref()),
+        }) => book::note_rm(&book::find_book(book.as_deref())?, &name),
+        Some(Command::Pin { book, force }) => book::pin(&book::find_book(book.as_deref())?, &force),
+        Some(Command::Rebase { book }) => book::rebase(&book::find_book(book.as_deref())?),
+        Some(Command::Sync { book, targets }) => {
+            codocia::translate::sync(&book::find_book(book.as_deref())?, &targets)
+        }
+        Some(Command::Check { book, page }) => {
+            book::check(&book::find_book(book.as_deref())?, page.as_deref())
+        }
         Some(Command::History {
             book,
             limit,
             window,
-        }) => book::history(&book, limit, window),
-        Some(Command::Map { book, areas }) => book::map(&book, areas),
-        Some(Command::Show { book, page }) => book::show(&book, &page),
-        Some(Command::Build { book, out, force }) => book::build(&book, out, force),
+        }) => book::history(&book::find_book(book.as_deref())?, limit, window),
+        Some(Command::Map { book, areas }) => book::map(&book::find_book(book.as_deref())?, areas),
+        Some(Command::Show { book, page }) => book::show(&book::find_book(book.as_deref())?, &page),
+        Some(Command::Build { book, out, force }) => {
+            book::build(&book::find_book(book.as_deref())?, out, force)
+        }
         Some(Command::Drift { command }) => match command {
             DriftCommand::Init { path } => init(path),
             DriftCommand::Snapshot { workspace, docs } => {
