@@ -8,7 +8,7 @@ title: 代码结构
 
 本页由 Codocia 根据代码自动生成，每次 build 重新计算：功能区划分、各区自带的说明、区之间的 import 依赖，以及讲解各区的页面。
 
-范围内共 16 个文件，8,005 行；已排除 `Cargo.lock`、`LICENSE`、`.gitignore`、`homebrew-tap-template/**`、`docs/**`、`**/.DS_Store`
+范围内共 16 个文件，8,059 行；已排除 `Cargo.lock`、`LICENSE`、`.gitignore`、`homebrew-tap-template/**`、`docs/**`、`**/.DS_Store`
 
 ## 文件结构
 
@@ -18,7 +18,7 @@ title: 代码结构
   讲解：[参与开发](04-contributing.md) (1)
 - `.github/` — 269 行，2 个文件\
   讲解：[参与开发](04-contributing.md) (2)
-- `src/` — 7,021 行，5 个文件。Library API for Codocia.\
+- `src/` — 7,075 行，5 个文件。Library API for Codocia.\
   核心文件：`book.rs` `structure.rs` `lib.rs`\
   讲解：[概览](01-overview.md) (4), [证据与审阅](02-evidence.md) (5), [结构、翻译与构建](03-output.md) (4), [参与开发](04-contributing.md) (1)
 

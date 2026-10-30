@@ -2,10 +2,10 @@
 title: What build writes
 order: 20
 evidence:
-  - src/book.rs:1168-1231 #012ab745ce3b
-  - src/book.rs:1431-1441 #5bf5d1669974
-  - src/book.rs:2656-2752 #aa84cee362b9
-  - src/book.rs:2981-3001 #1932ec5d057c
+  - src/book.rs:1169-1238 #1801438d92d5
+  - src/book.rs:1438-1448 #5bf5d1669974
+  - src/book.rs:2663-2759 #aa84cee362b9
+  - src/book.rs:2988-3008 #1932ec5d057c
   - src/translate.rs:529-579 #2f156a9a4b53
   - commit:dad32d4
   - commit:b4cfb0e
@@ -15,8 +15,9 @@ evidence:
 `build` runs `follow` and the full check, and stops on any error unless
 `--force` is given. Output goes to `--out`, else the `out:` path in
 `book.md` (repository-relative, no `..`), else `docs/` for a `.codocia/`
-book and `<book>/out` for an external one. The default and `out:` must stay
-inside the repository without passing through a symlink; only an explicit
+book and `<book>/out` for an external one. Any output not given with `--out`
+must stay inside the repository (or the external book) without passing
+through a symlink; only an explicit
 `--out` may point elsewhere. It writes `NN-slug.md` per page,
 `structure.md`, and `all.md` with every page on one page; the index is
 `README.md` inside the repository so the folder renders on GitHub. Each

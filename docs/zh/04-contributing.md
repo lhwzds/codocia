@@ -17,7 +17,7 @@ npm test --prefix npm
 
 Tests 工作流在每次推送到 `main` 和每个 pull request 时运行前三项和 `cargo publish --dry-run`。`SKILL.md` 通过 `include_str!` 编译进二进制，所以修改它会改变 `codocia skill` 的输出，并且需要重新构建。对哈希、frontmatter 格式或 `book.md` 键的任何改动，都会破坏其他仓库中已提交的书；请保持旧格式可读。
 
-<sub>来源: [book.rs:3057-3090](../../src/book.rs#L3057-L3090) · [book.rs:3564-3573](../../src/book.rs#L3564-L3573) · [lib.rs:14-16](../../src/lib.rs#L14-L16) · [main.rs:232-242](../../src/main.rs#L232-L242) · [test.yml](../../.github/workflows/test.yml) · +1</sub>
+<sub>来源: [book.rs:3064-3097](../../src/book.rs#L3064-L3097) · [book.rs:3618-3627](../../src/book.rs#L3618-L3627) · [lib.rs:14-16](../../src/lib.rs#L14-L16) · [main.rs:232-242](../../src/main.rs#L232-L242) · [test.yml](../../.github/workflows/test.yml) · +1</sub>
 
 ## 发布与 npm 包装
 

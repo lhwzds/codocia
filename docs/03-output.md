@@ -25,7 +25,7 @@ dependencies between areas.
 JS/TS, Go, C-family includes) to files in the repository; anything external is
 dropped. A language without a resolver simply has no edges.
 
-<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2313-2319](../src/book.rs#L2313-L2319) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2320-2326](../src/book.rs#L2320-L2326) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ## Translations that cannot drift silently
 
@@ -52,8 +52,9 @@ judge the prose.
 `build` runs `follow` and the full check, and stops on any error unless
 `--force` is given. Output goes to `--out`, else the `out:` path in
 `book.md` (repository-relative, no `..`), else `docs/` for a `.codocia/`
-book and `<book>/out` for an external one. The default and `out:` must stay
-inside the repository without passing through a symlink; only an explicit
+book and `<book>/out` for an external one. Any output not given with `--out`
+must stay inside the repository (or the external book) without passing
+through a symlink; only an explicit
 `--out` may point elsewhere. It writes `NN-slug.md` per page,
 `structure.md`, and `all.md` with every page on one page; the index is
 `README.md` inside the repository so the folder renders on GitHub. Each
@@ -67,7 +68,7 @@ marker first (no symlinks, nothing outside, a non-manifest marker stops the
 build), then deletes only listed files and refuses to overwrite any other
 file, so hand-written pages can share `docs/` with the book.
 
-<sub>Sources: [book.rs:1168-1231](../src/book.rs#L1168-L1231) · [book.rs:1431-1441](../src/book.rs#L1431-L1441) · [book.rs:2656-2752](../src/book.rs#L2656-L2752) · [book.rs:2981-3001](../src/book.rs#L2981-L3001) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
+<sub>Sources: [book.rs:1169-1238](../src/book.rs#L1169-L1238) · [book.rs:1438-1448](../src/book.rs#L1438-L1448) · [book.rs:2663-2759](../src/book.rs#L2663-L2759) · [book.rs:2988-3008](../src/book.rs#L2988-L3008) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
 
 ## Moving the pinned commit
 
@@ -83,4 +84,4 @@ report that the code moved when only documentation did. `code_moved`
 skips generated output and ignored files the same way, so `status` does not
 flag a commit that only added built docs.
 
-<sub>Sources: [book.rs:1091-1109](../src/book.rs#L1091-L1109) · [book.rs:2541-2576](../src/book.rs#L2541-L2576) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>Sources: [book.rs:1091-1109](../src/book.rs#L1091-L1109) · [book.rs:2548-2583](../src/book.rs#L2548-L2583) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
