@@ -152,9 +152,25 @@ pub fn find_book(arg: Option<&Path>) -> Result<PathBuf> {
     find_book_from(&std::env::current_dir()?)
 }
 
+// Check the directory entry itself, not its target, before using an implicit book.
+fn validate_implicit_book(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            bail!(
+                "{}: .codocia is a symlink; use --book to choose a book outside the repository",
+                path.display()
+            );
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("inspect {}", path.display())),
+    }
+}
+
 fn find_book_from(start: &Path) -> Result<PathBuf> {
     for dir in start.ancestors() {
         let candidate = dir.join(".codocia");
+        validate_implicit_book(&candidate)?;
         if candidate.join(BOOK_FILE).is_file() {
             return Ok(candidate);
         }
@@ -175,6 +191,9 @@ pub fn init(options: &InitOptions) -> Result<()> {
         .book
         .clone()
         .unwrap_or_else(|| repo.join(".codocia"));
+    if options.book.is_none() {
+        validate_implicit_book(&requested_book)?;
+    }
     fs::create_dir_all(&requested_book)
         .with_context(|| format!("create {}", requested_book.display()))?;
     let book_dir = requested_book.canonicalize()?;
@@ -3068,6 +3087,72 @@ mod tests {
         })
         .unwrap();
         (repo, book)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn implicit_init_refuses_symlinked_book() {
+        use std::os::unix::fs::symlink;
+        let (repo, _) = fixture();
+        let outside = repo.parent().unwrap().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let implicit = repo.canonicalize().unwrap().join(".codocia");
+        symlink(&outside, &implicit).unwrap();
+        let error = init(&InitOptions {
+            repo: repo.clone(),
+            book: None,
+            title: None,
+            lang: "en".into(),
+        })
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "{}: .codocia is a symlink; use --book to choose a book outside the repository",
+                implicit.display()
+            )
+        );
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        // An explicit external book remains supported even if .codocia is a symlink.
+        init(&InitOptions {
+            repo,
+            book: Some(outside.clone()),
+            title: None,
+            lang: "en".into(),
+        })
+        .unwrap();
+        assert!(outside.join(BOOK_FILE).is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_refuses_symlinked_book_before_check_or_remove() {
+        use std::os::unix::fs::symlink;
+        let (repo, outside) = fixture();
+        let implicit = repo.join(".codocia");
+        symlink(&outside, &implicit).unwrap();
+        let note = outside.join("notes/overview/victim.md");
+        fs::create_dir_all(note.parent().unwrap()).unwrap();
+        let content = "---\ntitle: Victim\nevidence:\n  - src/core/engine.rs:2-4\n---\n\nA note.\n";
+        fs::write(&note, content).unwrap();
+        let expected = format!(
+            "{}: .codocia is a symlink; use --book to choose a book outside the repository",
+            implicit.display()
+        );
+        let discover = || find_book_from(&repo.join("src/core"));
+        let error = discover().and_then(|book| check(&book, None)).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(fs::read_to_string(&note).unwrap(), content);
+        let error = discover()
+            .and_then(|book| note_rm(&book, "overview/victim"))
+            .unwrap_err();
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(fs::read_to_string(&note).unwrap(), content);
+        let explicit = find_book(Some(&outside)).unwrap();
+        check(&explicit, None).unwrap();
+        assert_ne!(fs::read_to_string(&note).unwrap(), content);
+        note_rm(&explicit, "overview/victim").unwrap();
+        assert!(!note.exists());
     }
 
     #[test]
