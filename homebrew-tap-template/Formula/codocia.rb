@@ -29,6 +29,6 @@ class Codocia < Formula
   end
 
   test do
-    assert_match "Codocia Docs Skill", shell_output("#{bin}/codocia skill")
+    assert_match "Codocia Skill", shell_output("#{bin}/codocia skill")
   end
 end
