@@ -151,6 +151,15 @@ fn parse_pair(raw: &str) -> Result<FilePair> {
     })
 }
 
+/// Repository files in `translations:`, sources and targets alike.
+pub(crate) fn paths(book: &Book) -> Vec<String> {
+    book.translations
+        .iter()
+        .filter_map(|raw| parse_pair(raw).ok())
+        .flat_map(|pair| [pair.target, pair.source])
+        .collect()
+}
+
 fn render_pair(pair: &FilePair) -> String {
     match &pair.pin {
         Some(pin) => format!("{}: {} #{pin}", pair.target, pair.source),

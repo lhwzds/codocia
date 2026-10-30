@@ -764,11 +764,14 @@ pub fn rebase(book_dir: &Path) -> Result<()> {
         bail!("resolve errors before moving the book to the new commit");
     }
     let repo = book.repo_path();
-    // Skip trailing commits that only add Codocia's generated docs, so the
-    // book pins the code it describes rather than its own output.
+    // Skip trailing commits that only add Codocia's generated docs or touch
+    // translated files (README and README_CN.md), so the book pins the code
+    // it describes rather than its own output.
+    let mut ignore = book.ignore.clone();
+    ignore.extend(crate::translate::paths(&book));
     let mut target = current_commit(&repo)?;
     while let Some(parent) = git_parent(&repo, &target) {
-        if code_moved(&repo, &parent, &target, &book.ignore) {
+        if code_moved(&repo, &parent, &target, &ignore) {
             break;
         }
         target = parent;
