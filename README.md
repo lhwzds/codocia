@@ -15,6 +15,7 @@ into a few readable Markdown pages.
 ## Install
 
 ```bash
+brew install lhwzds/tap/codocia
 cargo install codocia
 npm install -g codocia      # downloads the release binary
 ```
@@ -74,7 +75,7 @@ your-repo/
 | `note add/list/rm` | Save (`--replace` keeps omitted fields), list, delete notes |
 | `check [--page p]` | Evidence, links, symbols, budgets, translations; follows moved code |
 | `accept <target>` | Record a review: a note (`page/id`) or a translation (`zh/page/id`, `zh`, `README_CN.md`) |
-| `build [--out dir]` | Write `docs/` (and `docs/<lang>/`), moving the book to the current commit |
+| `build [--out dir]` | Write `docs/` (or `out:` from `book.md`) and `docs/<lang>/`, moving the book to the current commit |
 | `skill` | Print the agent workflow ([SKILL.md](SKILL.md)) |
 
 ## In CI

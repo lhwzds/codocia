@@ -25,8 +25,9 @@ first quality bar:
 - Explain function and design: how a request or job flows, why it is built
   this way, what breaks. Skip what code navigation already shows (argument
   lists, every class, every flag).
-- One page per functional area, not per file or directory. Default budget:
-  8 pages, 900 words per page, 180 words per note. A "word" is one Latin
+- One page per functional area, not per file or directory. Budgets: up to
+  8 pages (`init` picks 4, 6 or 8 by code size), 900 words per page, 180
+  words per note. A "word" is one Latin
   word or two CJK characters; fenced code and diagrams are not counted, so
   180 words is about 360 Chinese characters.
 - One note answers one question. If a note needs more than ~180 words, it is
@@ -63,7 +64,8 @@ codocia build             # docs/README.md, docs/NN-page.md, docs/all.md
 ```
 
 Every command finds the nearest `.codocia/` from the current directory;
-`--book <dir>` points at another book.
+`--book <dir>` points at another book. If the repository publishes docs from a
+subdirectory, set `out: docs/public` (repository-relative) in `book.md`.
 
 1. **Scope first.** Run `status` once, then put tests, benchmarks, examples,
    vendored code, and generated files in `ignore`. The coverage map then shows
