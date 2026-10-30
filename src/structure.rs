@@ -141,9 +141,9 @@ pub fn render(book: &Book, map: &StructureMap, page_link: impl Fn(&str) -> Strin
         "{} {} {}, {} {}{}\n\n",
         if zh { "范围内共" } else { "In scope:" },
         map.total_files,
-        if zh { "个文件" } else { "files" },
+        unit(zh, map.total_files, "个文件", "file"),
         thousands(map.total_lines),
-        if zh { "行" } else { "lines" },
+        unit(zh, map.total_lines, "行", "line"),
         if book.ignore.is_empty() {
             String::new()
         } else if zh {
@@ -202,9 +202,9 @@ pub fn render(book: &Book, map: &StructureMap, page_link: impl Fn(&str) -> Strin
             let mut line = format!(
                 "- {name} — {} {}，{} {}",
                 thousands(area.bucket.lines),
-                if zh { "行" } else { "lines" },
+                unit(zh, area.bucket.lines, "行", "line"),
                 thousands(area.bucket.files),
-                if zh { "个文件" } else { "files" }
+                unit(zh, area.bucket.files, "个文件", "file")
             );
             if !zh {
                 line = line.replace('，', ", ");
@@ -945,6 +945,15 @@ fn resolve_js<'a>(path: &str, spec: &str, known: &BTreeSet<&'a str>) -> Option<&
         }
     }
     None
+}
+
+/// `个文件`, or `file` / `files` by count.
+fn unit(zh: bool, n: usize, cjk: &'static str, en: &'static str) -> String {
+    match (zh, n) {
+        (true, _) => cjk.to_string(),
+        (false, 1) => en.to_string(),
+        (false, _) => format!("{en}s"),
+    }
 }
 
 #[cfg(test)]
