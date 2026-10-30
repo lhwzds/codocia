@@ -22,4 +22,4 @@ an engineer about to change it.
 
 - [Code structure](structure.md) — generated from the code: areas, dependencies, pages
 
-<sub>Generated from https://github.com/lhwzds/codocia @ `11b991e95b`</sub>
+<sub>Generated from https://github.com/lhwzds/codocia @ `e06d785435`</sub>

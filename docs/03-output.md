@@ -25,7 +25,7 @@ dependencies between areas.
 JS/TS, Go, C-family includes) to files in the repository; anything external is
 dropped. A language without a resolver simply has no edges.
 
-<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2187-2193](../src/book.rs#L2187-L2193) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2249-2255](../src/book.rs#L2249-L2255) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ## Translations that cannot drift silently
 
@@ -42,9 +42,10 @@ source hash changed, and when a translated note's source was deleted.
 count, code blocks (comments ignored), ASCII inline code or external URLs
 differ, because those must be identical in every language. `accept zh`
 (or `zh/book`, `zh/page/id`, `README_CN.md`) runs `sync`, which writes the
-current source hash; it does not judge the prose.
+current source hash, refusing a symlinked or escaping file; it does not
+judge the prose.
 
-<sub>Sources: [translate.rs:1-13](../src/translate.rs#L1-L13) · [translate.rs:115-130](../src/translate.rs#L115-L130) · [translate.rs:173-244](../src/translate.rs#L173-L244) · [translate.rs:278-311](../src/translate.rs#L278-L311) · [translate.rs:453-511](../src/translate.rs#L453-L511) · +1</sub>
+<sub>Sources: [translate.rs:1-13](../src/translate.rs#L1-L13) · [translate.rs:116-131](../src/translate.rs#L116-L131) · [translate.rs:174-245](../src/translate.rs#L174-L245) · [translate.rs:279-312](../src/translate.rs#L279-L312) · [translate.rs:454-512](../src/translate.rs#L454-L512) · +1</sub>
 
 ## What build writes
 
@@ -59,12 +60,13 @@ language switch under each title.
 
 Inside the repository, source links are relative (`../src/book.rs#L10-L20`)
 so they work in any checkout or fork; the index names the remote, never a
-local path. `.codocia-build` lists every generated file. The next build
-deletes only those files, and only inside the output directory (a marker
+local path. `.codocia-build` lists every generated file. Before touching
+anything, `prepare_output` validates every destination and the marker,
+refusing symlinks and escaping paths. The next build deletes only listed files, and only inside the output directory (a marker
 that is not a manifest stops the build) and refuses to overwrite any other file with a
 generated name, so hand-written pages can share `docs/` with the book.
 
-<sub>Sources: [book.rs:1087-1146](../src/book.rs#L1087-L1146) · [book.rs:1346-1356](../src/book.rs#L1346-L1356) · [book.rs:2530-2583](../src/book.rs#L2530-L2583) · [book.rs:2812-2832](../src/book.rs#L2812-L2832) · [translate.rs:519-569](../src/translate.rs#L519-L569) · +3</sub>
+<sub>Sources: [book.rs:1108-1167](../src/book.rs#L1108-L1167) · [book.rs:1367-1377](../src/book.rs#L1367-L1377) · [book.rs:2592-2688](../src/book.rs#L2592-L2688) · [book.rs:2917-2937](../src/book.rs#L2917-L2937) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
 
 ## Moving the pinned commit
 
@@ -80,4 +82,4 @@ report that the code moved when only documentation did. `code_moved`
 skips generated output and ignored files the same way, so `status` does not
 flag a commit that only added built docs.
 
-<sub>Sources: [book.rs:1043-1061](../src/book.rs#L1043-L1061) · [book.rs:2415-2450](../src/book.rs#L2415-L2450) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>Sources: [book.rs:1060-1078](../src/book.rs#L1060-L1078) · [book.rs:2477-2512](../src/book.rs#L2477-L2512) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>

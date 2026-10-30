@@ -46,7 +46,7 @@ never count as code: not in coverage, not in [Code structure](structure.md), and
 note does not mean the code moved. Commit `618468e` moved the book into the
 repository so the docs travel with the code they describe.
 
-<sub>Sources: [book.rs:146-166](../src/book.rs#L146-L166) · [book.rs:196-204](../src/book.rs#L196-L204) · [book.rs:1260-1274](../src/book.rs#L1260-L1274) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
+<sub>Sources: [book.rs:146-166](../src/book.rs#L146-L166) · [book.rs:196-204](../src/book.rs#L196-L204) · [book.rs:1281-1295](../src/book.rs#L1281-L1295) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
 
 ## Scope, coverage and budgets
 
@@ -64,18 +64,19 @@ Budgets scale with the code: under 20k lines `init` writes 4 pages and
 one and two CJK characters as one, and skips fenced code, so a Mermaid
 diagram is free. Over-budget pages and notes are warnings, never errors.
 
-<sub>Sources: [book.rs:235-244](../src/book.rs#L235-L244) · [book.rs:2085-2111](../src/book.rs#L2085-L2111) · [book.rs:2164-2186](../src/book.rs#L2164-L2186) · [book.rs:1994-2015](../src/book.rs#L1994-L2015) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
+<sub>Sources: [book.rs:236-245](../src/book.rs#L236-L245) · [book.rs:2147-2173](../src/book.rs#L2147-L2173) · [book.rs:2226-2248](../src/book.rs#L2226-L2248) · [book.rs:2056-2077](../src/book.rs#L2056-L2077) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
 
 ## Saving a note
 
-`note add` refuses a note for a page not in `book.md`, a note without
+`note add` refuses an invalid page or id slug, a page not in `book.md`, a note without
 evidence, and evidence that cannot be pinned (missing file, range past the
 end, unknown commit), so a bad citation never reaches the book. It then
 echoes each item with its size and first non-blank line, and calls a range
 over 120 lines wide: the echo is how the agent notices it cited the wrong
 lines. A new note goes after the page's existing ones (`order` + 10);
 `--replace` keeps every field that was not given, so fixing a body does not
-drop evidence. Notes are plain files, one per note, so agents can write
+drop evidence. Like every note write (`note rm`, `follow`, `accept`), it
+refuses a symlinked or escaping note path. Notes are plain files, one per note, so agents can write
 different pages in parallel and edit them by hand.
 
-<sub>Sources: [book.rs:383-473](../src/book.rs#L383-L473) · [book.rs:523-569](../src/book.rs#L523-L569)</sub>
+<sub>Sources: [book.rs:384-474](../src/book.rs#L384-L474) · [book.rs:526-572](../src/book.rs#L526-L572)</sub>

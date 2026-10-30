@@ -137,6 +137,9 @@ codocia build                 # moves the book's pinned commit, writes docs/
 `accept` refuses when a range now covers different code (a function that
 was replaced or moved out of the range). Fix the range in the note and
 accept again; `--force` is only for a range you have checked by hand.
+When you change a range's length (a function grew or shrank), `accept` has no
+pinned text of that length to compare with; read the new lines, then use
+`--force`.
 
 In CI, run `codocia check`: it exits non-zero when a note or a translation
 fell behind the code.

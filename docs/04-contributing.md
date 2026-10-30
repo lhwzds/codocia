@@ -27,7 +27,7 @@ output and needs a rebuild. Any change to the hash, the frontmatter format
 or the `book.md` keys breaks books already committed in other
 repositories; keep old forms readable.
 
-<sub>Sources: [book.rs:2888-2933](../src/book.rs#L2888-L2933) · [lib.rs:12-14](../src/lib.rs#L12-L14) · [main.rs:232-242](../src/main.rs#L232-L242) · [test.yml](../.github/workflows/test.yml) · [Cargo.toml](../Cargo.toml)</sub>
+<sub>Sources: [book.rs:2993-3026](../src/book.rs#L2993-L3026) · [book.rs:3243-3252](../src/book.rs#L3243-L3252) · [lib.rs:12-14](../src/lib.rs#L12-L14) · [main.rs:232-242](../src/main.rs#L232-L242) · [test.yml](../.github/workflows/test.yml) · +1</sub>
 
 ## Releases and the npm wrapper
 

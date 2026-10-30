@@ -3,10 +3,10 @@ title: Translations that cannot drift silently
 order: 10
 evidence:
   - src/translate.rs:1-13 #930e7bfc223e
-  - src/translate.rs:115-130 #17a5f00bd645
-  - src/translate.rs:173-244 #4e29264b5b2e
-  - src/translate.rs:278-311 #0ec8e1d27595
-  - src/translate.rs:453-511 #f5031f9b4558
+  - src/translate.rs:116-131 #17a5f00bd645
+  - src/translate.rs:174-245 #4e29264b5b2e
+  - src/translate.rs:279-312 #0ec8e1d27595
+  - src/translate.rs:454-512 #af8c404b26b6
   - commit:30f24d2
 ---
 
@@ -23,4 +23,5 @@ source hash changed, and when a translated note's source was deleted.
 count, code blocks (comments ignored), ASCII inline code or external URLs
 differ, because those must be identical in every language. `accept zh`
 (or `zh/book`, `zh/page/id`, `README_CN.md`) runs `sync`, which writes the
-current source hash; it does not judge the prose.
+current source hash, refusing a symlinked or escaping file; it does not
+judge the prose.

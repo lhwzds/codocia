@@ -14,23 +14,23 @@ title: 结构、翻译与构建
 
 `import_edges` 按语言把导入解析到仓库内的文件（Python、Rust `use` 路径、JS/TS、Go、C 系 include）；外部依赖直接丢弃。没有解析器的语言就没有依赖边。
 
-<sub>来源: [structure.rs:1-5](../../src/structure.rs#L1-L5) · [structure.rs:34-130](../../src/structure.rs#L34-L130) · [structure.rs:329-350](../../src/structure.rs#L329-L350) · [book.rs:2187-2193](../../src/book.rs#L2187-L2193) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>来源: [structure.rs:1-5](../../src/structure.rs#L1-L5) · [structure.rs:34-130](../../src/structure.rs#L34-L130) · [structure.rs:329-350](../../src/structure.rs#L329-L350) · [book.rs:2249-2255](../../src/book.rs#L2249-L2255) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ## 不会悄悄漂移的翻译
 
 Codocia 从不翻译；它只记录每份翻译是根据哪个源文本做的。书的翻译包括 `<lang>/book.md`（标题、页面标题、引言）和每条笔记对应的 `<lang>/<page>/<id>.md`，frontmatter 中带 `source: #hash`；哈希覆盖源笔记的标题和正文，不含证据，所以重新固定代码不会使译文失效。仓库文件的翻译对写在 `book.md` 中，形如 `README_CN.md: README.md #hash`。
 
-翻译缺失、从未同步、源哈希已变，或所译笔记的源已被删除时，`check` 报错。之后 `parity` 比较机械结构：标题数量、代码块（忽略注释）、ASCII 行内代码或外部 URL 不一致时发出警告，因为这些在每种语言中都必须相同。`accept zh`（或 `zh/book`、`zh/page/id`、`README_CN.md`）会运行 `sync`，写入当前的源哈希；它不评判译文质量。
+翻译缺失、从未同步、源哈希已变，或所译笔记的源已被删除时，`check` 报错。之后 `parity` 比较机械结构：标题数量、代码块（忽略注释）、ASCII 行内代码或外部 URL 不一致时发出警告，因为这些在每种语言中都必须相同。`accept zh`（或 `zh/book`、`zh/page/id`、`README_CN.md`）会运行 `sync`，写入当前的源哈希，并拒绝符号链接或逃出目录的文件；它不评判译文质量。
 
-<sub>来源: [translate.rs:1-13](../../src/translate.rs#L1-L13) · [translate.rs:115-130](../../src/translate.rs#L115-L130) · [translate.rs:173-244](../../src/translate.rs#L173-L244) · [translate.rs:278-311](../../src/translate.rs#L278-L311) · [translate.rs:453-511](../../src/translate.rs#L453-L511) · +1</sub>
+<sub>来源: [translate.rs:1-13](../../src/translate.rs#L1-L13) · [translate.rs:116-131](../../src/translate.rs#L116-L131) · [translate.rs:174-245](../../src/translate.rs#L174-L245) · [translate.rs:279-312](../../src/translate.rs#L279-L312) · [translate.rs:454-512](../../src/translate.rs#L454-L512) · +1</sub>
 
 ## build 写出什么
 
 `build` 先运行 `follow` 和完整检查，有任何错误就停止，除非给出 `--force`。输出目录依次取 `--out`、`book.md` 中的 `out:` 路径（相对于仓库，不能含 `..`），否则 `.codocia/` 中的书写到 `docs/`，外部书写到 `<book>/out`。它为每页写一个 `NN-slug.md`，外加 `structure.md`，以及把所有页面合在一页的 `all.md`；在仓库内部时索引名为 `README.md`，让该目录在 GitHub 上直接显示。`langs` 中的每种语言在 `<lang>/` 子目录下生成同样一套文件，每个标题下有语言切换。
 
-在仓库内部，源码链接是相对路径（`../src/book.rs#L10-L20`），在任何检出或 fork 中都能用；索引只写远程仓库名，从不写本地路径。`.codocia-build` 列出所有生成的文件。下次构建只删除这些文件，且只在输出目录内删除（标记文件不是清单时，构建直接停止），并拒绝覆盖任何同名的非生成文件，因此手写页面可以和书共用 `docs/`。
+在仓库内部，源码链接是相对路径（`../src/book.rs#L10-L20`），在任何检出或 fork 中都能用；索引只写远程仓库名，从不写本地路径。`.codocia-build` 列出所有生成的文件。在动任何文件之前，`prepare_output` 先校验每个目标路径和标记文件，拒绝符号链接和逃出目录的路径。下次构建只删除清单中的文件，且只在输出目录内删除（标记文件不是清单时，构建直接停止），并拒绝覆盖任何同名的非生成文件，因此手写页面可以和书共用 `docs/`。
 
-<sub>来源: [book.rs:1087-1146](../../src/book.rs#L1087-L1146) · [book.rs:1346-1356](../../src/book.rs#L1346-L1356) · [book.rs:2530-2583](../../src/book.rs#L2530-L2583) · [book.rs:2812-2832](../../src/book.rs#L2812-L2832) · [translate.rs:519-569](../../src/translate.rs#L519-L569) · +3</sub>
+<sub>来源: [book.rs:1108-1167](../../src/book.rs#L1108-L1167) · [book.rs:1367-1377](../../src/book.rs#L1367-L1377) · [book.rs:2592-2688](../../src/book.rs#L2592-L2688) · [book.rs:2917-2937](../../src/book.rs#L2917-L2937) · [translate.rs:529-579](../../src/translate.rs#L529-L579) · +3</sub>
 
 ## 移动固定提交
 
@@ -38,4 +38,4 @@ Codocia 从不翻译；它只记录每份翻译是根据哪个源文本做的。
 
 没有这一步，每次提交刚构建的 `docs/` 或修正 `README_CN.md` 都会让固定提交落后一个，`status` 也会在只有文档变化时报告代码已变。`code_moved` 以同样方式跳过生成的输出和被忽略的文件，所以只添加构建文档的提交不会被 `status` 标记。
 
-<sub>来源: [book.rs:1043-1061](../../src/book.rs#L1043-L1061) · [book.rs:2415-2450](../../src/book.rs#L2415-L2450) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>来源: [book.rs:1060-1078](../../src/book.rs#L1060-L1078) · [book.rs:2477-2512](../../src/book.rs#L2477-L2512) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
