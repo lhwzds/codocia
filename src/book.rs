@@ -1376,14 +1376,19 @@ fn evidence_state(repo: &Path, item: &Evidence) -> EvidenceState {
             let on_head = git(&["merge-base", "--is-ancestor", sha, "HEAD"])
                 .map(|o| o.status.success())
                 .unwrap_or(false);
-            let on_remote = git(&["branch", "-r", "--contains", sha])
+            // Links point at origin when it exists, so only its branches count.
+            let has_origin = git(&["remote", "get-url", "origin"])
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            let pattern = if has_origin { "origin/*" } else { "*" };
+            let on_remote = git(&["branch", "-r", "--contains", sha, "--list", pattern])
                 .map(|o| o.status.success() && !o.stdout.trim_ascii().is_empty())
                 .unwrap_or(false);
             if on_head || on_remote {
                 EvidenceState::Ok
             } else {
                 EvidenceState::BadRef(
-                    "commit not on HEAD or any remote branch (rewritten?)".to_string(),
+                    "commit not on HEAD or an origin branch (rewritten?)".to_string(),
                 )
             }
         }
