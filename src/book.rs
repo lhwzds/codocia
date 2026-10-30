@@ -219,6 +219,7 @@ pub fn init(options: &InitOptions) -> Result<()> {
         intro: String::new(),
         link_base: None,
     };
+    safe_target(&book_dir, &book_file)?;
     write_file(book_file, render_book(&book).as_bytes())?;
     fs::create_dir_all(book_dir.join(NOTES_DIR))?;
     println!(
@@ -382,6 +383,7 @@ pub fn status(book_dir: &Path, max_buckets: usize, area: Option<&str>) -> Result
 
 pub fn note_add(options: &NoteAddOptions) -> Result<()> {
     let book = load_book(&options.book)?;
+    validate_slug(&options.page, "page slug")?;
     if !book.pages.iter().any(|p| p.slug == options.page) {
         bail!(
             "unknown page `{}`; add it to `pages:` in {BOOK_FILE} first (known: {})",
@@ -480,6 +482,7 @@ pub fn note_add(options: &NoteAddOptions) -> Result<()> {
         evidence,
         body,
     };
+    safe_target(&book.dir, &path)?;
     write_file(path.clone(), render_note(&note).as_bytes())?;
     let words = word_units(&note.body);
     let page_words: usize = load_notes(&book)?
@@ -724,7 +727,10 @@ pub fn note_list(book_dir: &Path, page: Option<&str>) -> Result<()> {
 pub fn note_rm(book_dir: &Path, name: &str) -> Result<()> {
     let book = load_book(book_dir)?;
     let (page, id) = name.split_once('/').context("name the note as page/id")?;
+    validate_slug(page, "page slug")?;
+    validate_slug(id, "note id")?;
     let path = note_path(&book, page, id);
+    safe_target(&book.dir, &path)?;
     if !path.is_file() {
         bail!("note {name} not found");
     }
@@ -777,6 +783,7 @@ pub fn pin(book_dir: &Path, force: &[String]) -> Result<()> {
             }
         }
         if dirty {
+            safe_target(&book.dir, &note_path(&book, &note.page, &note.id))?;
             write_file(
                 note_path(&book, &note.page, &note.id),
                 render_note(&note).as_bytes(),
@@ -831,6 +838,7 @@ fn follow(book: &Book) -> Result<usize> {
             moved += usize::from(item_moved);
         }
         if dirty {
+            safe_target(&book.dir, &note_path(book, &note.page, &note.id))?;
             write_file(
                 note_path(book, &note.page, &note.id),
                 render_note(&note).as_bytes(),
@@ -866,6 +874,10 @@ pub fn accept(book_dir: &Path, targets: &[String], force: bool) -> Result<()> {
         if crate::translate::is_target(&book, &notes, target)? {
             translations.push(target.clone());
             continue;
+        }
+        if let Some((page, id)) = target.split_once('/') {
+            validate_slug(page, "page slug")?;
+            validate_slug(id, "note id")?;
         }
         let matches: Vec<_> = notes
             .iter()
@@ -930,14 +942,18 @@ pub fn accept(book_dir: &Path, targets: &[String], force: bool) -> Result<()> {
                     let old_nonblank: Vec<_> = old_lines
                         .iter()
                         .map(|s| s.trim())
-                        .filter(|s| !s.is_empty())
+                        .filter(|s| s.chars().any(char::is_alphanumeric))
                         .collect();
                     let new_trimmed: BTreeSet<_> = new_lines.iter().map(|s| s.trim()).collect();
                     let matches = old_nonblank
                         .iter()
                         .filter(|line| new_trimmed.contains(**line))
                         .count();
-                    if !old_nonblank.is_empty() && matches * 10 < old_nonblank.len() * 3 {
+                    if if old_nonblank.is_empty() {
+                        old_lines.join("\n").trim() != new_lines.join("\n").trim()
+                    } else {
+                        matches * 10 < old_nonblank.len() * 3
+                    } {
                         println!(
                             "{name}: {} now covers different code; fix the range in the note, then accept again (or pass --force)",
                             render_evidence(&Evidence {
@@ -955,6 +971,7 @@ pub fn accept(book_dir: &Path, targets: &[String], force: bool) -> Result<()> {
         if bad {
             refused = true;
         } else if dirty {
+            safe_target(&book.dir, &note_path(&book, &note.page, &note.id))?;
             write_file(
                 note_path(&book, &note.page, &note.id),
                 render_note(&note).as_bytes(),
@@ -1053,6 +1070,7 @@ fn move_book_commit(book: &mut Book) -> Result<()> {
     }
     if book.commit != target {
         book.commit = target;
+        safe_target(&book.dir, &book.dir.join(BOOK_FILE))?;
         write_file(book.dir.join(BOOK_FILE), render_book(book).as_bytes())?;
         println!("book pinned to {}", short(&book.commit));
     }
@@ -1061,6 +1079,9 @@ fn move_book_commit(book: &mut Book) -> Result<()> {
 
 /// Validates the book; with `page`, reports only that page's problems.
 pub fn check(book_dir: &Path, page: Option<&str>) -> Result<()> {
+    if let Some(page) = page {
+        validate_slug(page, "page slug")?;
+    }
     let book = load_book(book_dir)?;
     follow_and_report(&book)?;
     let notes = load_notes(&book)?;
@@ -1508,6 +1529,47 @@ fn render_note(note: &Note) -> String {
     out.push_str(note.body.trim());
     out.push('\n');
     out
+}
+
+/// Refuse writes through symlinks or directories escaping the book.
+pub(crate) fn safe_target(root: &Path, path: &Path) -> Result<()> {
+    let refuse = || {
+        anyhow::anyhow!(
+            "{}: refusing to write a note outside the book (symlink or escaping path)",
+            path.display()
+        )
+    };
+    let root = root.canonicalize()?;
+    let relative = path.strip_prefix(&root).map_err(|_| refuse())?;
+    if !relative
+        .components()
+        .all(|c| matches!(c, Component::Normal(_)))
+    {
+        return Err(refuse());
+    }
+    if fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(refuse());
+    }
+    let mut parent = path.parent().ok_or_else(refuse)?;
+    loop {
+        match fs::symlink_metadata(parent) {
+            Ok(_) => {
+                if !parent
+                    .canonicalize()
+                    .map_err(|_| refuse())?
+                    .starts_with(&root)
+                {
+                    return Err(refuse());
+                }
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                parent = parent.parent().ok_or_else(refuse)?;
+            }
+            Err(_) => return Err(refuse()),
+        }
+    }
+    Ok(())
 }
 
 fn note_path(book: &Book, page: &str, id: &str) -> PathBuf {
@@ -2529,6 +2591,50 @@ const MANIFEST_HEADER: &str = "generated by codocia build; files:";
 /// a repository's `docs/` can hold hand-written pages next to the book.
 fn prepare_output(out: &Path, names: &[String]) -> Result<()> {
     let marker = out.join(BUILD_MARKER);
+    let canonical_out = out.canonicalize()?;
+    for name in names
+        .iter()
+        .map(String::as_str)
+        .chain(std::iter::once(BUILD_MARKER))
+    {
+        let relative = Path::new(name);
+        let path = out.join(relative);
+        let refuse = || {
+            anyhow::anyhow!(
+                "{}: refusing to write outside the output directory",
+                path.display()
+            )
+        };
+        if relative.as_os_str().is_empty()
+            || !relative
+                .components()
+                .all(|c| matches!(c, Component::Normal(_)))
+        {
+            return Err(refuse());
+        }
+        if fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(refuse());
+        }
+        let mut ancestor = out.to_path_buf();
+        if let Some(parent) = relative.parent() {
+            for component in parent.components() {
+                ancestor.push(component);
+                match fs::symlink_metadata(&ancestor) {
+                    Ok(_)
+                        if !ancestor
+                            .canonicalize()
+                            .map_err(|_| refuse())?
+                            .starts_with(&canonical_out) =>
+                    {
+                        return Err(refuse());
+                    }
+                    Ok(_) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(_) => return Err(refuse()),
+                }
+            }
+        }
+    }
     let previous: Vec<String> = match fs::read(&marker) {
         Ok(bytes)
             if std::str::from_utf8(&bytes)
@@ -2558,7 +2664,6 @@ fn prepare_output(out: &Path, names: &[String]) -> Result<()> {
             );
         }
     }
-    let canonical_out = out.canonicalize()?;
     for name in &previous {
         let relative = Path::new(name);
         let mut components = relative.components().peekable();
@@ -2918,6 +3023,221 @@ mod tests {
         })
         .unwrap();
         (repo, book)
+    }
+
+    #[test]
+    fn note_rm_rejects_traversal() {
+        let (repo, _) = fixture();
+        let book = init_in_repo(&repo);
+        let victim = repo.join("victim.md");
+        fs::write(&victim, "keep").unwrap();
+        assert!(note_rm(&book, "../../victim").is_err());
+        assert_eq!(fs::read_to_string(victim).unwrap(), "keep");
+        assert!(check(&book, Some("../bad")).is_err());
+        assert!(accept(&book, &["../victim".into()], false).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn note_writes_and_deletes_reject_symlinks() {
+        use std::os::unix::fs::symlink;
+        let (_, book) = fixture();
+        let outside = temp_dir("note-outside");
+        let victim = outside.join("loop.md");
+        fs::write(&victim, "keep").unwrap();
+        symlink(&outside, book.join("notes/overview")).unwrap();
+        let error = add(&book, "loop", &["src/core/engine.rs:2-4"], "Test.")
+            .unwrap_err()
+            .to_string();
+        // Existing files are not replaced without --replace; deletion must still refuse.
+        assert!(error.contains("already exists"), "{error}");
+        let error = note_rm(&book, "overview/loop").unwrap_err().to_string();
+        assert!(
+            error.contains("refusing to write a note outside the book"),
+            "{error}"
+        );
+        let error = add(&book, "new", &["src/core/engine.rs:2-4"], "Test.")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("refusing to write a note outside the book"),
+            "{error}"
+        );
+        assert_eq!(fs::read_to_string(victim).unwrap(), "keep");
+        assert!(!outside.join("new.md").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_refuses_to_rewrite_symlinked_note() {
+        use std::os::unix::fs::symlink;
+        let (_, book) = fixture();
+        let outside = book.parent().unwrap().join("outside.md");
+        let content = "---\ntitle: Engine\nevidence:\n  - src/core/engine.rs:2-4\n---\n\n`run` calls `step`.\n";
+        fs::write(&outside, content).unwrap();
+        fs::create_dir_all(book.join("notes/overview")).unwrap();
+        symlink(&outside, book.join("notes/overview/loop.md")).unwrap();
+        let error = check(&book, None).unwrap_err().to_string();
+        assert!(
+            error.contains("refusing to write a note outside the book (symlink or escaping path)"),
+            "{error}"
+        );
+        assert_eq!(fs::read_to_string(outside).unwrap(), content);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn build_rejects_escaping_language_directory_before_deletion() {
+        use std::os::unix::fs::symlink;
+        let (repo, book) = fixture();
+        let book_md = book.join(BOOK_FILE);
+        let text = fs::read_to_string(&book_md).unwrap();
+        fs::write(
+            &book_md,
+            text.replacen("---\n\n", "langs:\n  - zh\n---\n\n", 1),
+        )
+        .unwrap();
+        let out = repo.join("docs");
+        fs::create_dir_all(&out).unwrap();
+        let outside = temp_dir("output-outside");
+        fs::write(outside.join("all.md"), "keep").unwrap();
+        fs::write(out.join("all.md"), "old").unwrap();
+        fs::write(
+            out.join(BUILD_MARKER),
+            format!("{MANIFEST_HEADER}\nall.md\nzh/all.md\n"),
+        )
+        .unwrap();
+        symlink(&outside, out.join("zh")).unwrap();
+        let error = build(&book, Some(out.clone()), true)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("refusing to write outside the output directory"),
+            "{error}"
+        );
+        assert_eq!(fs::read_to_string(outside.join("all.md")).unwrap(), "keep");
+        assert_eq!(fs::read_to_string(out.join("all.md")).unwrap(), "old");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn build_rejects_symlinked_marker_before_deletion() {
+        use std::os::unix::fs::symlink;
+        let (repo, book) = fixture();
+        let out = repo.join("docs");
+        fs::create_dir_all(&out).unwrap();
+        let outside = repo.join("marker.txt");
+        let manifest = format!("{MANIFEST_HEADER}\nall.md\n");
+        fs::write(&outside, &manifest).unwrap();
+        fs::write(out.join("all.md"), "old").unwrap();
+        symlink(&outside, out.join(BUILD_MARKER)).unwrap();
+        let error = build(&book, Some(out.clone()), true)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("refusing to write outside the output directory"),
+            "{error}"
+        );
+        assert_eq!(fs::read_to_string(outside).unwrap(), manifest);
+        assert_eq!(fs::read_to_string(out.join("all.md")).unwrap(), "old");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accept_refuses_symlinked_translation_and_book() {
+        use std::os::unix::fs::symlink;
+        let (_, book) = fixture();
+        let book_md = book.join(BOOK_FILE);
+        let text = fs::read_to_string(&book_md).unwrap();
+        fs::write(
+            &book_md,
+            text.replacen("---\n\n", "langs:\n  - zh\n---\n\n", 1),
+        )
+        .unwrap();
+        let outside = book.parent().unwrap().join("translation.md");
+        let translation = "---\ntitle: 中文\n---\n\nTranslation.\n";
+        fs::write(&outside, translation).unwrap();
+        fs::create_dir_all(book.join("zh")).unwrap();
+        symlink(&outside, book.join("zh/book.md")).unwrap();
+        let error = accept(&book, &["zh/book".into()], false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("refusing to write a note outside the book"),
+            "{error}"
+        );
+        assert_eq!(fs::read_to_string(&outside).unwrap(), translation);
+
+        fs::remove_file(book.join("zh/book.md")).unwrap();
+        fs::write(book.join("zh/book.md"), translation).unwrap();
+        let outside_book = book.parent().unwrap().join("external-book.md");
+        let content = fs::read(&book_md).unwrap();
+        fs::write(&outside_book, &content).unwrap();
+        fs::remove_file(&book_md).unwrap();
+        symlink(&outside_book, &book_md).unwrap();
+        let error = crate::translate::sync(&book, &["zh".into()])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("refusing to write a note outside the book"),
+            "{error}"
+        );
+        assert_eq!(fs::read(outside_book).unwrap(), content);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_rejects_symlinked_generated_file() {
+        use std::os::unix::fs::symlink;
+        let (repo, book) = fixture();
+        let out = repo.join("docs");
+        fs::create_dir_all(&out).unwrap();
+        let outside = repo.join("outside.md");
+        fs::write(&outside, "keep").unwrap();
+        symlink(&outside, out.join("all.md")).unwrap();
+        let error = build(&book, Some(out), true).unwrap_err().to_string();
+        assert!(
+            error.contains("refusing to write outside the output directory"),
+            "{error}"
+        );
+        assert_eq!(fs::read_to_string(outside).unwrap(), "keep");
+    }
+
+    #[test]
+    fn accept_does_not_count_punctuation_as_overlap() {
+        let (repo, book) = fixture();
+        let source = repo.join("src/core/engine.rs");
+        fs::write(
+            &source,
+            "fn authorize(u: &User) -> bool {\n    u.is_admin()\n}\n",
+        )
+        .unwrap();
+        git(&repo, &["add", "."]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "authorize",
+            ],
+        );
+        let mut loaded = load_book(&book).unwrap();
+        loaded.commit = current_commit(&repo).unwrap();
+        fs::write(book.join(BOOK_FILE), render_book(&loaded)).unwrap();
+        add(&book, "auth", &["src/core/engine.rs:1-3"], "Authorization.").unwrap();
+        let note = note_path(&loaded, "overview", "auth");
+        let before = fs::read(&note).unwrap();
+        fs::write(
+            &source,
+            "fn delete_backup(p: &Path) {\n    fs::remove_dir_all(p).ok();\n}\n",
+        )
+        .unwrap();
+        assert!(accept(&book, &["overview/auth".into()], false).is_err());
+        assert_eq!(fs::read(note).unwrap(), before);
     }
 
     fn init_in_repo(repo: &Path) -> PathBuf {

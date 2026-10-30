@@ -83,7 +83,7 @@ fn read_translated(path: &Path) -> Result<Option<Translated>> {
     }))
 }
 
-fn write_translated(path: &Path, t: &Translated) -> Result<()> {
+fn write_translated(root: &Path, path: &Path, t: &Translated) -> Result<()> {
     let mut out = format!("---\ntitle: {}\n", t.title);
     if let Some(source) = &t.source {
         out.push_str(&format!("source: #{source}\n"));
@@ -97,6 +97,7 @@ fn write_translated(path: &Path, t: &Translated) -> Result<()> {
     out.push_str("---\n\n");
     out.push_str(&t.body);
     out.push('\n');
+    book::safe_target(root, path)?;
     write_file(path.to_path_buf(), out.as_bytes())
 }
 
@@ -464,11 +465,19 @@ pub fn sync(book_dir: &Path, targets: &[String]) -> Result<()> {
         let (lang, rest) = target.split_once('/').unwrap_or((target, ""));
         if book.langs.iter().any(|l| l == lang) {
             if rest.is_empty() || rest == "book" {
-                synced += sync_file(&book_file(&book, lang), &hash(&book_source(&book)))?;
+                synced += sync_file(
+                    &book.dir,
+                    &book_file(&book, lang),
+                    &hash(&book_source(&book)),
+                )?;
             }
             for note in &notes {
                 if rest.is_empty() || rest == format!("{}/{}", note.page, note.id) {
-                    synced += sync_file(&note_file(&book, lang, note), &hash(&note_source(note)))?;
+                    synced += sync_file(
+                        &book.dir,
+                        &note_file(&book, lang, note),
+                        &hash(&note_source(note)),
+                    )?;
                 }
             }
             continue;
@@ -491,12 +500,13 @@ pub fn sync(book_dir: &Path, targets: &[String]) -> Result<()> {
             bail!("`{target}` is neither a language in `langs:` nor a file in `translations:`");
         }
     }
+    book::safe_target(&book.dir, &book.dir.join("book.md"))?;
     write_file(book.dir.join("book.md"), render_book(&book).as_bytes())?;
     println!("synced {synced} translation(s)");
     Ok(())
 }
 
-fn sync_file(path: &Path, current: &str) -> Result<usize> {
+fn sync_file(root: &Path, path: &Path, current: &str) -> Result<usize> {
     let Some(mut t) = read_translated(path)? else {
         bail!(
             "{} does not exist; write the translation first",
@@ -507,7 +517,7 @@ fn sync_file(path: &Path, current: &str) -> Result<usize> {
         return Ok(0);
     }
     t.source = Some(current.to_string());
-    write_translated(path, &t)?;
+    write_translated(root, path, &t)?;
     Ok(1)
 }
 
