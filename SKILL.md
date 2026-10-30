@@ -124,6 +124,9 @@ codocia check                 # moved code is followed; changed code is an error
 codocia pin                   # follow moved code automatically
 # for each "code changed" error: re-read the code, fix the note, then
 codocia pin --force page/id
+# --force accepts whatever the range now holds: first check the range still
+# covers the code the note describes (a function that grew, moved or was
+# replaced), or the hash pins the wrong lines
 codocia rebase                # pin the book to the new HEAD once check passes
 ```
 
