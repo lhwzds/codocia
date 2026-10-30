@@ -1043,6 +1043,10 @@ fn push_indented_diff(message: &mut String, diff: &str, indent: &str) {
 }
 
 pub(crate) fn current_commit(workspace: &Path) -> Result<String> {
+    // A plain directory (no Git) has no commit; never call git for it.
+    if !workspace.join(".git").exists() {
+        return Ok(String::new());
+    }
     let output = Command::new("git")
         .arg("-C")
         .arg(workspace)

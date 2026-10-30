@@ -1351,6 +1351,9 @@ fn pin_for(repo: &Path, target: &EvidenceRef) -> Result<Option<String>> {
 fn evidence_state(repo: &Path, item: &Evidence) -> EvidenceState {
     match &item.target {
         EvidenceRef::Commit(sha) => {
+            if !is_git(repo) {
+                return EvidenceState::BadRef("not a git repository".to_string());
+            }
             let ok = Command::new("git")
                 .arg("-C")
                 .arg(repo)
@@ -1665,7 +1668,54 @@ fn page_links(body: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 // Repository inventory and coverage areas
 
+/// Whether `repo` is a Git checkout. Plain directories are supported
+/// without calling git at all: no history, no commit pin.
+fn is_git(repo: &Path) -> bool {
+    repo.join(".git").exists()
+}
+
+/// Files of a plain directory: everything except hidden entries (other than
+/// .github), dependency and build folders, and symlinks.
+fn walk_files(root: &Path) -> Result<Vec<String>> {
+    fn visit(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
+        let mut entries: Vec<_> = fs::read_dir(dir)?.collect::<Result<_, _>>()?;
+        entries.sort_by_key(|e| e.file_name());
+        for entry in entries {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let kind = entry.file_type()?;
+            if kind.is_symlink() {
+                continue;
+            }
+            if kind.is_dir() {
+                let skip = (name.starts_with('.') && name != ".github")
+                    || matches!(
+                        name.as_str(),
+                        "node_modules" | "target" | "__pycache__" | "dist" | "build"
+                    );
+                if !skip {
+                    visit(root, &entry.path(), out)?;
+                }
+            } else if kind.is_file() && !name.starts_with(".DS_Store") {
+                let rel = entry
+                    .path()
+                    .strip_prefix(root)
+                    .unwrap_or(&entry.path())
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push(rel);
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    visit(root, root, &mut out)?;
+    Ok(out)
+}
+
 fn tracked_files(repo: &Path) -> Result<Vec<String>> {
+    if !is_git(repo) {
+        return walk_files(repo);
+    }
     let output = Command::new("git")
         .arg("-C")
         .arg(repo)
@@ -1936,6 +1986,9 @@ fn release_timeline(repo: &Path) -> Vec<(String, String)> {
 /// Reads commit headers; with `window`, also the touched paths of the most
 /// recent `window` commits (path lists are slow on large histories).
 fn git_log(repo: &Path, window: Option<usize>) -> Result<Vec<GitCommit>> {
+    if !is_git(repo) {
+        return Ok(Vec::new());
+    }
     let mut command = Command::new("git");
     command.arg("-C").arg(repo).args([
         "log",
@@ -1971,6 +2024,9 @@ fn git_log(repo: &Path, window: Option<usize>) -> Result<Vec<GitCommit>> {
 }
 
 fn git_parent(repo: &Path, commit: &str) -> Option<String> {
+    if !is_git(repo) {
+        return None;
+    }
     let output = Command::new("git")
         .arg("-C")
         .arg(repo)
@@ -1987,7 +2043,7 @@ fn git_parent(repo: &Path, commit: &str) -> Option<String> {
 /// Codocia's own generated docs (directories holding a build manifest), so
 /// committing the built docs into the repository is not reported as drift.
 fn code_moved(repo: &Path, commit: &str, head: &str, ignore: &[String]) -> bool {
-    if head == commit || head.is_empty() {
+    if head == commit || head.is_empty() || !is_git(repo) {
         return false;
     }
     let Ok(output) = Command::new("git")
@@ -2022,7 +2078,7 @@ fn code_moved(repo: &Path, commit: &str, head: &str, ignore: &[String]) -> bool 
 /// (old path -> new path), as git's rename detection sees them.
 fn git_renames(repo: &Path, commit: &str) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
-    if commit.is_empty() {
+    if commit.is_empty() || !is_git(repo) {
         return out;
     }
     let Ok(output) = Command::new("git")
@@ -2054,6 +2110,9 @@ fn git_renames(repo: &Path, commit: &str) -> BTreeMap<String, String> {
 }
 
 fn git_remote_url(repo: &Path) -> Option<String> {
+    if !is_git(repo) {
+        return None;
+    }
     let output = Command::new("git")
         .arg("-C")
         .arg(repo)
@@ -2556,6 +2615,32 @@ mod tests {
         let warnings = repetition_warnings(&notes);
         assert_eq!(warnings.len(), 2, "{warnings:?}");
         assert!(warnings.iter().all(|w| w.contains("b/two")));
+    }
+
+    #[test]
+    fn plain_directories_work_without_git() {
+        let root = temp_dir("plain");
+        let repo = root.join("src-tree");
+        fs::create_dir_all(repo.join("pkg/.cache")).unwrap();
+        fs::create_dir_all(repo.join("node_modules/x")).unwrap();
+        fs::write(repo.join("pkg/core.py"), "def run():\n    return 1\n").unwrap();
+        fs::write(repo.join("pkg/.cache/junk.py"), "x\n").unwrap();
+        fs::write(repo.join("node_modules/x/i.js"), "x\n").unwrap();
+        let book = root.join("book");
+        init(&InitOptions {
+            repo: repo.clone(),
+            book: book.clone(),
+            title: None,
+            lang: "en".to_string(),
+        })
+        .unwrap();
+        assert_eq!(walk_files(&repo).unwrap(), vec!["pkg/core.py"]);
+        add(&book, "run", &["pkg/core.py:1-2"], "`run` returns 1.").unwrap();
+        assert!(add(&book, "c", &["commit:abcdef1"], "x").is_err());
+        let loaded = load_book(&book).unwrap();
+        let report = check_book(&loaded, &load_notes(&loaded).unwrap()).unwrap();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        build(&book, None, false).unwrap();
     }
 
     #[test]
