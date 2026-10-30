@@ -33,6 +33,8 @@ pub struct Book {
     pub dir: PathBuf,
     pub title: String,
     pub repo: String,
+    /// Optional output directory relative to the repository root.
+    pub out: Option<String>,
     pub commit: String,
     pub remote: Option<String>,
     pub lang: String,
@@ -194,6 +196,7 @@ pub fn init(options: &InitOptions) -> Result<()> {
     let book = Book {
         dir: book_dir.clone(),
         title,
+        out: None,
         repo: match book_dir.strip_prefix(&repo) {
             Ok(relative) if relative.as_os_str().is_empty() => ".".to_string(),
             Ok(relative) => vec![".."; relative.components().count()].join("/"),
@@ -1089,13 +1092,15 @@ pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
     let mut book = book;
     move_book_commit(&mut book)?;
     let repo = book.repo_path().canonicalize()?;
-    let out = out.unwrap_or_else(|| {
-        if book.dir == repo.join(".codocia") {
-            repo.join("docs")
-        } else {
-            book.dir.join("out")
-        }
-    });
+    let out = out
+        .or_else(|| book.out.as_ref().map(|path| repo.join(path)))
+        .unwrap_or_else(|| {
+            if book.dir == repo.join(".codocia") {
+                repo.join("docs")
+            } else {
+                book.dir.join("out")
+            }
+        });
     fs::create_dir_all(&out).with_context(|| format!("create {}", out.display()))?;
     let out = out.canonicalize()?;
     // Inside the repository: link sources relatively and name the index
@@ -1332,7 +1337,19 @@ pub fn load_book(dir: &Path) -> Result<Book> {
             title: unquote(title),
         });
     }
+    let out = front.scalar("out").map(unquote);
+    if let Some(ref value) = out {
+        let path = Path::new(value);
+        if path.is_absolute()
+            || path
+                .components()
+                .any(|part| part == std::path::Component::ParentDir)
+        {
+            bail!("{BOOK_FILE}: `out` must be a repository-relative path without `..`");
+        }
+    }
     Ok(Book {
+        out,
         title: front.scalar("title").unwrap_or("Documentation").to_string(),
         repo: front
             .scalar("repo")
@@ -1362,6 +1379,9 @@ pub(crate) fn render_book(book: &Book) -> String {
     let mut out = String::from("---\n");
     out.push_str(&format!("title: {}\n", book.title));
     out.push_str(&format!("repo: {}\n", book.repo));
+    if let Some(path) = &book.out {
+        out.push_str(&format!("out: {path}\n"));
+    }
     out.push_str(&format!("commit: {}\n", book.commit));
     if let Some(remote) = &book.remote {
         out.push_str(&format!("remote: {remote}\n"));
@@ -2930,6 +2950,55 @@ mod tests {
                 String::from_utf8_lossy(&output.stderr)
             );
         }
+    }
+
+    #[test]
+    fn configured_output_is_relative_validated_and_overridable() {
+        let (repo, _) = fixture();
+        let book = init_in_repo(&repo);
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        let path = book.join(BOOK_FILE);
+        let original = fs::read_to_string(&path).unwrap();
+        fs::write(
+            &path,
+            original.replace("repo: ..\n", "repo: ..\nout: docs/public\n"),
+        )
+        .unwrap();
+        build(&book, None, false).unwrap();
+        assert!(repo.join("docs/public/README.md").is_file());
+        let page = fs::read_to_string(repo.join("docs/public/01-overview.md")).unwrap();
+        assert!(page.contains("../../src/core/engine.rs#L2-L4"), "{page}");
+        build(&book, Some(repo.join("custom-out")), false).unwrap();
+        assert!(repo.join("custom-out/README.md").is_file());
+        for invalid in ["/tmp/x", "../x"] {
+            fs::write(
+                &path,
+                original.replace("repo: ..\n", &format!("repo: ..\nout: {invalid}\n")),
+            )
+            .unwrap();
+            let error = load_book(&book).unwrap_err().to_string();
+            assert!(
+                error.contains("out") && error.contains("repository-relative"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn book_without_out_renders_without_out() {
+        let (_, book) = fixture();
+        let loaded = load_book(&book).unwrap();
+        let rendered = render_book(&loaded);
+        assert!(!rendered.lines().any(|line| line.starts_with("out:")));
+        fs::write(book.join(BOOK_FILE), rendered).unwrap();
+        let again = render_book(&load_book(&book).unwrap());
+        assert_eq!(again, fs::read_to_string(book.join(BOOK_FILE)).unwrap());
     }
 
     #[test]
