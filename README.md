@@ -8,8 +8,8 @@ that tell you when they fall behind the code.
 Codocia is a notebook and compiler for AI coding agents (Claude Code, Codex,
 OpenCode, …) and for the people who review them. It never calls a model. The
 agent reads the code and saves **notes with evidence**; Codocia pins each
-cited line range to a content hash, maps the code structure, enforces a word
-budget, keeps translations in step with their source, and compiles the notes
+cited line range to a content hash, maps the code structure, warns when a word
+budget is exceeded, keeps translations in step with their source, and compiles the notes
 into a few readable Markdown pages.
 
 ## Install
