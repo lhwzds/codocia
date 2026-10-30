@@ -1361,10 +1361,30 @@ fn evidence_state(repo: &Path, item: &Evidence) -> EvidenceState {
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false);
-            if ok {
+            if !ok {
+                return EvidenceState::BadRef("commit not found in repository".to_string());
+            }
+            // A rewritten commit can still exist locally but 404 on the host.
+            let git = |args: &[&str]| {
+                Command::new("git")
+                    .arg("-C")
+                    .arg(repo)
+                    .args(args)
+                    .output()
+                    .ok()
+            };
+            let on_head = git(&["merge-base", "--is-ancestor", sha, "HEAD"])
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            let on_remote = git(&["branch", "-r", "--contains", sha])
+                .map(|o| o.status.success() && !o.stdout.trim_ascii().is_empty())
+                .unwrap_or(false);
+            if on_head || on_remote {
                 EvidenceState::Ok
             } else {
-                EvidenceState::BadRef("commit not found in repository".to_string())
+                EvidenceState::BadRef(
+                    "commit not on HEAD or any remote branch (rewritten?)".to_string(),
+                )
             }
         }
         EvidenceRef::Pr(_) | EvidenceRef::Issue(_) => EvidenceState::Ok,
@@ -2504,6 +2524,41 @@ mod tests {
         })
         .unwrap();
         (repo, book)
+    }
+
+    #[test]
+    fn commit_off_head_is_flagged() {
+        let (repo, _book) = fixture();
+        let commit = |msg: &str| {
+            git(
+                &repo,
+                &[
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "commit",
+                    "-q",
+                    "--allow-empty",
+                    "-m",
+                    msg,
+                ],
+            );
+            let out = Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap();
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        };
+        let old = commit("original");
+        git(&repo, &["reset", "-q", "--hard", "HEAD~1"]);
+        let new = commit("rewritten");
+        let state =
+            |sha: &str| evidence_state(&repo, &parse_evidence(&format!("commit:{sha}")).unwrap());
+        assert_eq!(state(&new), EvidenceState::Ok);
+        assert!(matches!(state(&old), EvidenceState::BadRef(_)));
     }
 
     fn add(book: &Path, id: &str, evidence: &[&str], body: &str) -> Result<()> {
