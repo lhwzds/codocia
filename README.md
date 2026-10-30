@@ -1,344 +1,95 @@
 # Codocia
 
-Turn what an agent learns about a codebase into small, source-grounded docs.
+English | [中文](README_CN.md)
+
+Turn what an agent learns about a codebase into small, source-grounded docs
+that tell you when they fall behind the code.
 
 Codocia is a notebook and compiler for AI coding agents (Claude Code, Codex,
-OpenCode, …). It never calls a model and never edits the repository. The
-agent reads the code and saves **notes with evidence**; Codocia pins that
-evidence to content hashes, shows which parts of the repository are still
-unexplained, enforces a word budget, and compiles the notes into a few
-readable Markdown pages.
+OpenCode, …) and for the people who review them. It never calls a model. The
+agent reads the code and saves **notes with evidence**; Codocia pins each
+cited line range to a content hash, maps the code structure, enforces a word
+budget, keeps translations in step with their source, and compiles the notes
+into a few readable Markdown pages.
+
+## Install
 
 ```bash
-codocia init --repo ~/src/sglang --book ~/books/sglang --lang zh
-cd ~/books/sglang
-codocia status                 # pages, budgets, coverage map of the repo
-codocia history                # design commits, releases, hot files
-echo '`TokenizerManager` sends ...' | codocia note add --page runtime \
-  --id request-flow --title "请求链路" \
-  -e python/sglang/srt/managers/tokenizer_manager.py:940-966
-codocia check                  # evidence current? symbols real? budgets?
-codocia build                  # out/index.md, out/NN-page.md, out/all.md
+cargo install codocia
+npm install -g codocia      # downloads the release binary
 ```
 
-`codocia skill` prints the full agent workflow ([SKILL.md](SKILL.md)).
+## Quick start
+
+```bash
+cd your-repo
+codocia init                      # creates .codocia/
+codocia skill                     # the workflow to hand to your agent
+codocia note add --page overview --id request-flow --title "How a request flows" \
+  -e src/server.rs:120-180 --body 'The `Server` accepts …'
+codocia check                     # evidence current? symbols real? budgets?
+codocia build                     # writes docs/
+```
+
+Commit `.codocia/` and `docs/`. Anyone who clones the repository, and CI, can
+then run `codocia check`, which fails when cited code changed after the note
+was written.
+
+```
+your-repo/
+├── .codocia/
+│   ├── book.md               # title, pages, budgets, languages, translated files
+│   ├── notes/<page>/<id>.md  # one note per file, with its evidence
+│   └── zh/…                  # translations, each pinned to its English source
+└── docs/                     # generated: README.md, NN-page.md, all.md, structure.md, zh/
+```
 
 ## Why notes with evidence
 
-- **Concise by default.** ≤8 pages, ≤900 words per page, ≤180 words per note
-  (a word is one Latin word or two CJK characters). One note answers one
-  question; one page covers one functional area, not one file.
-- **Grounded.** Every note cites `path:start-end`, `commit:<sha>`, `pr:<n>`,
-  or `issue:<n>`. File evidence is pinned to a hash of the cited lines.
-- **Maintainable.** When code moves, `pin` follows it; when cited code
-  changes, `check` fails until the note is reviewed. `rebase` moves the book
-  to the new commit.
+- **Concise by default.** Page and word budgets scale with the code (at most
+  8 pages, 900 words per page, 180 words per note; a word is one Latin word
+  or two CJK characters). One note answers one question; one page covers one
+  functional area, not one file.
+- **Grounded.** Every note cites `path:start-end`, `commit:<sha>`, `pr:<n>`
+  or `issue:<n>`, and file evidence is pinned to a hash of the cited lines.
+- **Maintainable.** When code moves, `check` follows it. When cited code
+  changes, `check` fails until someone reviews the note with `accept`, which
+  shows the lines before and after and refuses a range that now covers
+  different code.
 - **Structure is generated, not written.** Every build adds a `structure`
-  appendix computed from the code — areas, their own descriptions, the most
-  imported files, import dependencies between areas, and which pages explain
-  each area — so the map of the code cannot go stale.
-- **Agent-friendly.** Plain files (`book.md`, `notes/<page>/<id>.md`), one
-  note per file, so several agents can write different pages in parallel.
+  page computed from the code: areas, their own descriptions, the most
+  imported files, import dependencies, and which pages explain each area.
+- **Bilingual without drift.** Translations of notes and of files such as
+  `README_CN.md` record the source they were made from; `check` fails when
+  the source moves on and warns when code, links or headings differ.
+- **Agent-friendly.** Plain Markdown files, one note per file, so several
+  agents can write different pages in parallel.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `init --repo R --book B` | Create a book for repository `R`, pinned to its HEAD |
-| `status [--area dir]` | Pages and budgets; repository areas with cited state |
-| `history` | Design-shaping commits by year, release timeline, hot files |
+| `init` | Create `.codocia/` for the current repository |
+| `status [--map] [--history] [--area dir]` | Pages, budgets and coverage; the generated structure; design history |
 | `note add/list/rm` | Save (`--replace` keeps omitted fields), list, delete notes |
-| `pin [--force page/id]` | Pin new evidence, follow moved code, accept reviewed changes |
-| `check [--page p]` | Evidence, links, backticked symbols and paths, budgets, translation drift |
-| `map` | Generated structure: areas, own descriptions, hub files, import graph, pages |
-| `show <page>` | Print one rendered page (`structure` for the map) |
-| `build [--out dir]` | Write the Markdown book, plus `<lang>/` for each translation |
-| `sync <target>` | Record that a translation (`zh`, `zh/page/id`, `README_CN.md`) matches its source |
-| `rebase` | Move the pinned commit to the repository HEAD |
-| `site …` / `serve …` | Render a Markdown directory with Starlight |
-| `drift init/snapshot/check` | Legacy in-repository drift checks (below) |
+| `check [--page p]` | Evidence, links, symbols, budgets, translations; follows moved code |
+| `accept <target>` | Record a review: a note (`page/id`) or a translation (`zh/page/id`, `zh`, `README_CN.md`) |
+| `build [--out dir]` | Write `docs/` (and `docs/<lang>/`), moving the book to the current commit |
+| `skill` | Print the agent workflow ([SKILL.md](SKILL.md)) |
 
-## Legacy drift mode
-
-The original Codocia workflow binds pages in a repository's own `docs/` to the
-code they explain with `covers` frontmatter and checks them for drift. It is
-still available under `codocia drift`; the rest of this README describes it.
-
-### Drift quickstart
-
-Install Codocia from one of the package channels:
-
-```bash
-cargo install codocia
-# or
-npm install -g codocia
-```
-
-Create the docs workspace:
-
-```bash
-codocia drift init
-```
-
-Write a Markdown page with `covers` metadata:
-
-```md
----
-title: Runtime
-covers:
-  - crates/runtime/**
-  - python/skrun/runtime.py
----
-
-# Runtime
-
-This page explains the runtime module.
-```
-
-Record the current code snapshot:
-
-```bash
-codocia drift snapshot
-```
-
-Review the generated repository policy in `codocia.md`, then commit the docs
-and Codocia changes:
-
-```bash
-git add codocia.md docs
-git commit -m "docs: add runtime coverage"
-```
-
-Later, after code changes, check whether docs are stale:
-
-```bash
-codocia drift check --base main
-```
-
-If the check reports stale or uncovered code, read the affected source files
-and docs pages before changing snapshots. Update Markdown when behavior,
-contracts, workflows, or operational guidance changed. If the diff is not
-documentation-impacting, keep prose unchanged and refresh the snapshot after
-review.
-
-### How It Works
-
-Each docs page declares the code paths it covers:
+## In CI
 
 ```yaml
-covers:
-  - crates/runtime/**
-  - python/skrun/runtime.py
+- run: cargo install codocia
+- run: codocia check
 ```
 
-`codocia drift snapshot` expands those patterns, hashes the matched files, and writes
-the result to `docs/.codocia-snapshot.json`:
+## Examples
 
-```json
-{
-  "commit": "abc123",
-  "docs": {
-    "docs/runtime.md": {
-      "covers": ["crates/runtime/**", "python/skrun/runtime.py"],
-      "files": {
-        "crates/runtime/src/lib.rs": "9f2a...",
-        "python/skrun/runtime.py": "81bc..."
-      }
-    }
-  }
-}
-```
+RestLoop's documentation is built with Codocia, in English and Chinese:
+[docs/](https://github.com/lhwzds/restloop/tree/main/docs) and
+[docs/zh/](https://github.com/lhwzds/restloop/tree/main/docs/zh).
 
-`codocia drift check` compares the stored hashes in `docs/.codocia-snapshot.json`
-with the current files. If a covered file changed, the page is stale.
+## License
 
-When `--base main` is provided, Codocia also reads git diff information from:
-
-- committed changes in `main...HEAD`;
-- staged changes;
-- unstaged changes.
-
-That lets Codocia report changed source files that have no docs coverage and
-include diff excerpts for files that need documentation review.
-
-When the check passes, Codocia still prints a quality note for AI agents. A
-passing check means coverage and snapshots are current; it does not mean bulk
-generated, low-information docs are acceptable.
-
-### Commands
-
-```bash
-codocia drift init
-```
-
-Creates `codocia.md` and `docs/index.md` if they do not exist. Existing files
-are not overwritten.
-
-`codocia.md` is an agent-readable documentation policy with the repository's
-default density, metrics, and page defaults. The code keeps the runtime
-defaults in the CLI and library.
-
-```bash
-codocia
-codocia skill
-```
-
-Prints the Codocia docs skill from `SKILL.md` to stdout. This is intended for
-AI agents that need the operating rules without Codocia writing a local skill
-folder.
-
-```bash
-codocia drift snapshot
-```
-
-Updates `docs/.codocia-snapshot.json` for every docs page with `covers`. It
-does not rewrite Markdown pages.
-
-```bash
-codocia drift check --base main
-```
-
-Checks documentation coverage and freshness. It exits with a non-zero status
-when docs are stale, covers are broken, or changed source files are uncovered.
-When changed files are available from git, the failure output includes a
-`git diff review` section with committed, staged, and unstaged diff excerpts.
-When the check passes, the output reminds agents not to treat the clean snapshot
-as proof that template-shaped docs are complete.
-
-Use `--docs <path>` only when the documentation directory is not `docs`.
-
-### Reading `codocia drift check` Output
-
-The check output is a review queue. Use each section as a concrete next action:
-
-| Section | Meaning | Next action |
-| --- | --- | --- |
-| `broken covers` | A docs page has a `covers` pattern that matches no files. | Fix the glob, move the coverage to the right page, or remove stale coverage. |
-| `missing snapshots` | A page declares `covers`, but no snapshot entry exists yet. | Review the page, then run `codocia drift snapshot`. |
-| `stale docs` | A covered file's content hash changed. | Read the diff and update prose only if documented behavior changed. |
-| `missing covered files` | A previously covered file no longer exists. | Update the page ownership and `covers` metadata. |
-| `changed code without docs coverage` | A changed source file is not covered by any page. | Add it to an existing conceptual page or create a real docs page. |
-| `changed code with stale docs` | A changed source file is covered by docs that are stale. | Read those docs and the diff together. |
-| `uncovered code files` | Source files exist without coverage. | Treat as inventory; do not generate shallow one-page-per-file docs. |
-| `git diff review` | Diff excerpts for relevant files. | Use this as evidence for doc edits or snapshot-only review. |
-
-When `codocia drift check` passes, it still prints a quality note. Passing means
-coverage and snapshots are current. It does not prove prose depth, usability, or
-maintained documentation quality.
-
-```bash
-codocia site generate
-```
-
-Generates a local Astro Starlight documentation site from the existing Markdown
-docs without changing the source `docs/` directory. The default output is
-`.codocia/starlight`; use `--output <path>` for another local site directory.
-Running `codocia site` without a subcommand also generates the site.
-
-The generated site copies Markdown into `src/content/docs/`, copies raw
-Markdown into `public/md/`, and writes `public/llms.txt` plus
-`public/llms-full.txt` for AI readers.
-
-```bash
-codocia site build
-codocia site serve
-```
-
-`site build` and `site serve` generate the site first, ensure `npm` is
-available, run `npm install` when `node_modules` is missing, and then run the
-Starlight build or dev server. Use the plain fallback when Node/npm is not
-available:
-
-```bash
-codocia serve --plain
-```
-
-### Failure Types
-
-`broken covers`
-
-A docs page declares a `covers` pattern that matches no files.
-
-`stale docs`
-
-A docs page covers a file whose current content hash no longer matches the
-stored snapshot.
-
-`missing covered files`
-
-A docs page snapshot references a file that no longer exists.
-
-`changed code without docs coverage`
-
-A source file changed in git diff, but no docs page covers it.
-
-`uncovered code files`
-
-A source file exists in the workspace, but no docs page covers it. Codocia
-recognizes common implementation extensions, including Rust, Python,
-JavaScript, TypeScript, TSX/JSX, Vue, Svelte, Go, Java, Kotlin, Swift, C/C++,
-C#, Ruby, PHP, shell, Lua, R, and SQL.
-
-### AI Agent Workflow
-
-If you are an AI agent maintaining docs for a repository using Codocia, follow
-this loop:
-
-1. Run `codocia drift check --base main`.
-2. Read `codocia.md` when present so you know the repository's density,
-   metrics, and page defaults.
-3. For every stale doc, read the stale docs page and the `git diff review`
-   excerpts for the changed files it covers.
-4. Update the Markdown body only when the diff changes documented behavior.
-5. If a changed source file is uncovered, either add it to an existing page's
-   `covers` list or create a new docs page.
-6. Run `codocia drift snapshot`.
-7. Run `codocia drift check --base main` again.
-8. Do not edit generated site output. Only edit docs source files.
-
-Important rules:
-
-- Docs are source of truth.
-- Do not add `# codocia` blocks to source comments.
-- Do not update snapshot metadata before updating the human-readable docs body.
-- If a hash changed but the diff is formatting-only, test-only, comment-only,
-  or otherwise not documentation-impacting, leave the prose unchanged and refresh
-  the snapshot to record that the docs were reviewed.
-- A passing check means the docs snapshot is current, not that the prose is
-  perfect.
-- Do not bulk-generate source-file inventory pages just to make coverage pass;
-  low-information pages should remain indexes or drafts, not maintained docs.
-- When finishing, report the changed docs pages, source files reviewed,
-  snapshot changes, validation commands, and any remaining docs gaps.
-
-For a more detailed runbook, see [Agent Workflow](docs/agent-workflow.md).
-
-### CI Example
-
-```yaml
-name: docs
-
-on:
-  pull_request:
-
-jobs:
-  codocia:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install codocia
-      - run: codocia drift check --base origin/main
-```
-
-### MVP Scope
-
-- Markdown frontmatter declares `covers`.
-- `docs/.codocia-snapshot.json` stores expanded file hashes.
-- Common source extensions are treated as code files for uncovered-file checks.
-- File freshness uses deterministic content hashes.
-- Git diff is used only when `--base` is provided.
-- No AI calls, HTML generation, llms output, or source-comment extraction in the
-  MVP.
+MIT

@@ -1,9 +1,14 @@
 # Codocia Skill
 
 Codocia turns what you (the agent) learn about a codebase into a small,
-source-grounded documentation set. Codocia never calls a model and never edits
-the repository. You read code and write notes; Codocia pins evidence, tracks
-coverage and budgets, and compiles the notes into Markdown.
+source-grounded documentation set. Codocia never calls a model. You read code
+and write notes; Codocia pins evidence, tracks coverage and budgets, keeps
+translations in step, and compiles the notes into Markdown.
+
+The book lives in the repository: `.codocia/` holds `book.md` (outline and
+settings), `notes/<page>/<id>.md` and translations; `codocia build` writes
+`docs/`. Commit both, so anyone who clones the repository (and CI) can run
+`codocia check`.
 
 ## The Goal: Concise
 
@@ -42,26 +47,28 @@ first quality bar:
 ## Workflow
 
 ```bash
-codocia init --repo <repo> --book <book-dir> --lang zh   # book outside the repo
-cd <book-dir>
-# edit book.md: pages (the outline), ignore (out-of-scope globs), intro text
+cd <repo>
+codocia init              # creates .codocia/ (add --lang zh for Chinese labels)
+# edit .codocia/book.md: pages (the outline), ignore (out-of-scope globs), intro
 codocia status            # pages, budgets, coverage map of the repo's areas
-codocia map               # generated structure: areas, hub files, dependencies
-codocia history           # hot files, structural commits, design-shaping commits
+codocia status --map      # generated structure: areas, hub files, dependencies
+codocia status --history  # hot files, structural commits, design-shaping commits
 # loop: read code -> add a note -> status
-codocia note add --page runtime --id request-flow --title "一个请求的完整链路" \
-  -e python/pkg/server.py:120-180 -e commit:abc1234 <<'EOF'
+codocia note add --page runtime --id request-flow --title "How a request flows" \
+  -e src/server.py:120-180 -e commit:abc1234 <<'EOF'
 ...note body in Markdown...
 EOF
-codocia show runtime      # preview one rendered page
-codocia check             # evidence, links, symbols, budgets
-codocia build             # out/index.md, out/NN-page.md, out/all.md
+codocia check             # evidence, links, symbols, budgets, translations
+codocia build             # docs/README.md, docs/NN-page.md, docs/all.md
 ```
+
+Every command finds the nearest `.codocia/` from the current directory;
+`--book <dir>` points at another book.
 
 1. **Scope first.** Run `status` once, then put tests, benchmarks, examples,
    vendored code, and generated files in `ignore`. The coverage map then shows
    only what the docs should explain.
-2. **Outline second.** Read `codocia map` to see the areas, their hub files,
+2. **Outline second.** Read `codocia status --map` to see the areas, their hub files,
    and how they depend on each other. Choose ≤8 pages in `book.md` from it,
    ordered for reading: overview → runtime flow → core subsystems → extension
    points → history and design decisions.
@@ -75,17 +82,17 @@ codocia build             # out/index.md, out/NN-page.md, out/all.md
 4. **Coverage is a map, not a target.** A `·` area in `status` means no note
    cites it. Decide: does a newcomer need it? If yes, add a note; if no, leave
    it or add it to `ignore`. Never write filler to turn rows into `✓`.
-5. **History.** `history` lists the files that keep changing and the commits
+5. **History.** `status --history` lists the files that keep changing and the commits
    that reshaped the code. Read the important ones with `git show --stat` and
    record the decision and its reason, citing `commit:`.
-6. **Finish.** Run `check` until it reports no errors, read `out/all.md`
-   end to end, cut repetition, then `build`.
+6. **Finish.** Run `check` until it reports no errors, `build`, read
+   `docs/all.md` end to end, cut repetition, and build again.
 
 ## Note Rules
 
 - `--id` and page slugs use `a-z 0-9 - _`. Notes live in
-  `notes/<page>/<id>.md`; you may also edit a note file directly, then run
-  `codocia pin` if you changed its evidence.
+  `.codocia/notes/<page>/<id>.md`; you may also edit a note file directly;
+  the next `check` pins any new evidence.
 - `--title` is the section heading. Leave it empty (`--title ""`) for a
   page's opening paragraph and give it `--order 0`. Without `--order`, a new
   note goes after the page's existing notes.
@@ -106,13 +113,12 @@ Give each agent its own page. `check --page` shows only that page's
 problems, so book-level warnings (the whole-book word budget, two pages
 explaining the same code) belong to nobody: when every page is written,
 one agent runs a plain `codocia check` and resolves them before `build`.
-That agent also reads `codocia show` for every page once and fixes places
+That agent also reads every built page once and fixes places
 where two pages state different facts (counts, defaults, error behavior);
 reviewers find these self-contradictions even when every claim has evidence.
- Empty pages are warnings, so the book stays
+Empty pages are warnings, so the book stays
 buildable while others write. Use `codocia check --page <slug>` to see only
-your page's problems and `codocia show <slug>` to preview it; `build`
-rewrites the shared `out/` directory. Use `status --area <dir>` to see which
+your page's problems; `build` rewrites the shared `docs/` directory. Use `status --area <dir>` to see which
 files under one area are cited.
 
 ## Keeping a Book Current
@@ -120,15 +126,18 @@ files under one area are cited.
 When the repository moves:
 
 ```bash
-codocia check                 # moved code is followed; changed code is an error
-codocia pin                   # follow moved code automatically
+codocia check                 # follows moved code itself; changed code is an error
 # for each "code changed" error: re-read the code, fix the note, then
-codocia pin --force page/id
-# --force accepts whatever the range now holds: first check the range still
-# covers the code the note describes (a function that grew, moved or was
-# replaced), or the hash pins the wrong lines
-codocia rebase                # pin the book to the new HEAD once check passes
+codocia accept page/id        # shows the cited lines before and after
+codocia build                 # moves the book's pinned commit, writes docs/
 ```
+
+`accept` refuses when a range now covers different code (a function that
+was replaced or moved out of the range). Fix the range in the note and
+accept again; `--force` is only for a range you have checked by hand.
+
+In CI, run `codocia check`: it exits non-zero when a note or a translation
+fell behind the code.
 
 ## Translations
 
@@ -137,21 +146,15 @@ records which source each translation was made from and fails `check` once
 the source moves on.
 
 - Book: list languages in `book.md` (`langs:` then `  - zh`). Translate
-  `<book>/zh/book.md` (frontmatter `title`, `pages:` with `slug: 标题` for
-  every page; the body is the intro) and `<book>/zh/<page>/<id>.md` per note
+  `.codocia/zh/book.md` (frontmatter `title`, `pages:` with `slug: 标题` for
+  every page; the body is the intro) and `.codocia/zh/<page>/<id>.md` per note
   (`title` plus the translated body; evidence stays in the source note).
 - Repository files: list them in `book.md` (`translations:` then
   `  - README_CN.md: README.md`).
 - After translating, or after re-checking a translation whose source changed,
-  run `codocia sync zh/<page>/<id>` (or `zh`, `zh/book`, `README_CN.md`).
+  run `codocia accept zh/<page>/<id>` (or `zh`, `zh/book`, `README_CN.md`).
 - `check` errors: missing, never synced, or source changed since. Warnings:
   inline code, external links, code blocks (comments aside) or heading
   counts differ. Keep code, commands and identifiers identical; translate the
   prose and comments only.
-- `build` writes `<out>/zh/` with a language switch under every page title.
-
-## Legacy Drift Mode
-
-`codocia drift init|snapshot|check` keeps the older in-repository workflow for
-`docs/` pages with `covers` frontmatter. `codocia site` and `codocia serve`
-render any Markdown directory with Starlight (`--docs <book>/out`).
+- `build` writes `docs/zh/` with a language switch under every page title.

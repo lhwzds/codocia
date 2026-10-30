@@ -15,11 +15,13 @@ or when the npm package does not support your platform yet.
 ## Usage
 
 ```bash
-codocia skill
-codocia init
-codocia check --base main
-codocia snapshot
+codocia init      # create .codocia/ in the repository
+codocia skill     # print the agent workflow
+codocia check     # evidence, links, budgets, translation drift
+codocia build     # write docs/
 ```
+
+See the [README](https://github.com/lhwzds/codocia#readme) for the workflow.
 
 ## Install note
 
