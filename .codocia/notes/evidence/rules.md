@@ -2,9 +2,9 @@
 title: What else check enforces
 order: 30
 evidence:
-  - src/book.rs:1860-1922 #6a2b010ca04b
+  - src/book.rs:1866-1928 #6a2b010ca04b
   - src/book.rs:572-665 #96f8e3a6a67a
-  - src/book.rs:1691-1732 #df2a459fbe43
+  - src/book.rs:1697-1738 #df2a459fbe43
   - commit:2853a01
   - commit:34b80cd
 ---

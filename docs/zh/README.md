@@ -19,4 +19,4 @@ Codocia 是给 AI 编程智能体用的笔记本和编译器：智能体阅读�
 
 - [代码结构](structure.md) — 从代码生成：功能区、依赖、讲解页
 
-<sub>生成自 https://github.com/lhwzds/codocia @ `1a3a0eac71`</sub>
+<sub>生成自 https://github.com/lhwzds/codocia @ `11b991e95b`</sub>

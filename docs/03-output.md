@@ -25,7 +25,7 @@ dependencies between areas.
 JS/TS, Go, C-family includes) to files in the repository; anything external is
 dropped. A language without a resolver simply has no edges.
 
-<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:323-344](../src/structure.rs#L323-L344) · [book.rs:2181-2187](../src/book.rs#L2181-L2187) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2187-2193](../src/book.rs#L2187-L2193) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ## Translations that cannot drift silently
 
@@ -60,10 +60,11 @@ language switch under each title.
 Inside the repository, source links are relative (`../src/book.rs#L10-L20`)
 so they work in any checkout or fork; the index names the remote, never a
 local path. `.codocia-build` lists every generated file. The next build
-deletes only those files and refuses to overwrite any other file with a
+deletes only those files, and only inside the output directory (a marker
+that is not a manifest stops the build) and refuses to overwrite any other file with a
 generated name, so hand-written pages can share `docs/` with the book.
 
-<sub>Sources: [book.rs:1081-1140](../src/book.rs#L1081-L1140) · [book.rs:1340-1350](../src/book.rs#L1340-L1350) · [book.rs:2517-2552](../src/book.rs#L2517-L2552) · [book.rs:2764-2784](../src/book.rs#L2764-L2784) · [translate.rs:519-569](../src/translate.rs#L519-L569) · +3</sub>
+<sub>Sources: [book.rs:1087-1146](../src/book.rs#L1087-L1146) · [book.rs:1346-1356](../src/book.rs#L1346-L1356) · [book.rs:2530-2583](../src/book.rs#L2530-L2583) · [book.rs:2812-2832](../src/book.rs#L2812-L2832) · [translate.rs:519-569](../src/translate.rs#L519-L569) · +3</sub>
 
 ## Moving the pinned commit
 
@@ -79,4 +80,4 @@ report that the code moved when only documentation did. `code_moved`
 skips generated output and ignored files the same way, so `status` does not
 flag a commit that only added built docs.
 
-<sub>Sources: [book.rs:1042-1060](../src/book.rs#L1042-L1060) · [book.rs:2406-2441](../src/book.rs#L2406-L2441) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>Sources: [book.rs:1043-1061](../src/book.rs#L1043-L1061) · [book.rs:2415-2450](../src/book.rs#L2415-L2450) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>

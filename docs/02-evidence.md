@@ -19,7 +19,7 @@ The hash is deliberately dumb and stable: no dependency, identical on every
 platform, and blind to reformatting at line ends. Changing `hash_lines`
 would turn every pin in every existing book into a "code changed" error.
 
-<sub>Sources: [book.rs:1595-1648](../src/book.rs#L1595-L1648) · [book.rs:1671-1687](../src/book.rs#L1671-L1687) · [book.rs:1783-1790](../src/book.rs#L1783-L1790) · [lib.rs:34-41](../src/lib.rs#L34-L41)</sub>
+<sub>Sources: [book.rs:1601-1654](../src/book.rs#L1601-L1654) · [book.rs:1677-1693](../src/book.rs#L1677-L1693) · [book.rs:1789-1796](../src/book.rs#L1789-L1796) · [lib.rs:34-41](../src/lib.rs#L34-L41)</sub>
 
 ## Following moved code
 
@@ -37,7 +37,7 @@ get a pin. A missing file is first looked up in `git_renames`, which runs
 evidence. Commit `fa187ba` folded the old `pin` command into this step,
 so only code that really changed needs a person.
 
-<sub>Sources: [book.rs:1734-1780](../src/book.rs#L1734-L1780) · [book.rs:801-841](../src/book.rs#L801-L841) · [book.rs:2443-2474](../src/book.rs#L2443-L2474) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
+<sub>Sources: [book.rs:1740-1786](../src/book.rs#L1740-L1786) · [book.rs:801-841](../src/book.rs#L801-L841) · [book.rs:2452-2483](../src/book.rs#L2452-L2483) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
 
 ## Reviewing changed code with accept
 
@@ -51,11 +51,12 @@ window over that version to find the lines whose hash equals the pin, since
 Then the range check: if fewer than 30% of the old non-blank lines (trimmed)
 still appear in the new range, the range now covers different code, for
 example a function replaced or moved out of it, and `accept` refuses. It
-also refuses when no pinned version can be read, so the check always runs.
+also refuses when no window of the pinned version matches the pin, so the
+check always compares against verified text.
 The fix is a corrected range in the note; `--force` skips the check for a
 range verified by hand. One refused range leaves the whole note at its old pins.
 
-<sub>Sources: [book.rs:899-955](../src/book.rs#L899-L955) · [book.rs:995-1013](../src/book.rs#L995-L1013) · [commit 2658f2d](https://github.com/lhwzds/codocia/commit/2658f2d)</sub>
+<sub>Sources: [book.rs:899-955](../src/book.rs#L899-L955) · [book.rs:995-1014](../src/book.rs#L995-L1014) · [commit 2658f2d](https://github.com/lhwzds/codocia/commit/2658f2d)</sub>
 
 ## What else check enforces
 
@@ -75,7 +76,7 @@ branch (any remote branch when there is no origin), because a commit
 rewritten by a rebase can survive locally while its link 404s on the host
 (commits `2853a01`, `34b80cd`).
 
-<sub>Sources: [book.rs:1860-1922](../src/book.rs#L1860-L1922) · [book.rs:572-665](../src/book.rs#L572-L665) · [book.rs:1691-1732](../src/book.rs#L1691-L1732) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
+<sub>Sources: [book.rs:1866-1928](../src/book.rs#L1866-L1928) · [book.rs:572-665](../src/book.rs#L572-L665) · [book.rs:1697-1738](../src/book.rs#L1697-L1738) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
 
 ## Repetition through shared evidence
 
@@ -87,4 +88,4 @@ both notes and the shared lines. One shared range is an ordinary
 cross-reference and passes. The fix is to keep the explanation on one page
 and link to it from the others.
 
-<sub>Sources: [book.rs:1925-1970](../src/book.rs#L1925-L1970) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>
+<sub>Sources: [book.rs:1931-1976](../src/book.rs#L1931-L1976) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>

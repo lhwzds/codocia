@@ -29,7 +29,7 @@ flowchart LR
 
 `effective_ignore` 把书目录加入忽略规则，因此笔记永远不算代码：不计入覆盖，不出现在 [代码结构](structure.md)，修改笔记也不算代码变动。提交 `618468e` 把书移进仓库，让文档跟随它所描述的代码一起流转。
 
-<sub>来源: [book.rs:146-166](../../src/book.rs#L146-L166) · [book.rs:196-204](../../src/book.rs#L196-L204) · [book.rs:1254-1268](../../src/book.rs#L1254-L1268) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
+<sub>来源: [book.rs:146-166](../../src/book.rs#L146-L166) · [book.rs:196-204](../../src/book.rs#L196-L204) · [book.rs:1260-1274](../../src/book.rs#L1260-L1274) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
 
 ## 范围、覆盖与预算
 
@@ -38,7 +38,7 @@ flowchart LR
 
 预算随代码规模变化：少于 2 万行时 `init` 写入 4 页、2,500 词，少于 20 万行时为 6 页、4,000 词，否则 8 页、6,000 词；每本书都是每页 900 词、每条笔记 180 词。`word_units` 把一个拉丁词计为 1，两个 CJK 字符计为 1，并跳过围栏代码，所以 Mermaid 图不占预算。页面或笔记超出预算只是警告，不是错误。
 
-<sub>来源: [book.rs:235-244](../../src/book.rs#L235-L244) · [book.rs:2079-2105](../../src/book.rs#L2079-L2105) · [book.rs:2158-2180](../../src/book.rs#L2158-L2180) · [book.rs:1988-2009](../../src/book.rs#L1988-L2009) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
+<sub>来源: [book.rs:235-244](../../src/book.rs#L235-L244) · [book.rs:2085-2111](../../src/book.rs#L2085-L2111) · [book.rs:2164-2186](../../src/book.rs#L2164-L2186) · [book.rs:1994-2015](../../src/book.rs#L1994-L2015) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
 
 ## 保存笔记
 

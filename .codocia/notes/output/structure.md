@@ -4,11 +4,11 @@ order: 0
 evidence:
   - src/structure.rs:1-5 #0f44bb6ab227
   - src/structure.rs:34-130 #c62570bd4850
-  - src/structure.rs:323-344 #8d18251308e6
-  - src/book.rs:2181-2187 #1335da84da2d
+  - src/structure.rs:329-350 #8d18251308e6
+  - src/book.rs:2187-2193 #1335da84da2d
   - commit:38c44b1
   - commit:eee3e1b
-  - src/structure.rs:463-487 #8f22ee0eac8d
+  - src/structure.rs:469-493 #8f22ee0eac8d
 ---
 
 Agents write file tables that go stale, so Codocia generates the map
