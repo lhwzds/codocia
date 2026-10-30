@@ -2,8 +2,8 @@
 title: Reviewing changed code with accept
 order: 20
 evidence:
-  - src/book.rs:911-967 #fb276f93f372
-  - src/book.rs:1012-1031 #743b0aafedb8
+  - src/book.rs:904-981 #89a5d134d8c6
+  - src/book.rs:1024-1043 #743b0aafedb8
   - commit:2658f2d
 ---
 
@@ -15,7 +15,7 @@ window over that version to find the lines whose hash equals the pin, since
 `follow` may already have changed the line numbers.
 
 Then the range check: if fewer than 30% of the old lines that contain a letter or digit (trimmed)
-still appear in the new range, the range now covers different code, for
+still appear in the new range, each new line matching at most one old line, the range now covers different code, for
 example a function replaced or moved out of it, and `accept` refuses. It
 also refuses when no window of the pinned version matches the pin, so the
 check always compares against verified text.

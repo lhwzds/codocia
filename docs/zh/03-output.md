@@ -14,7 +14,7 @@ title: 结构、翻译与构建
 
 `import_edges` 按语言把导入解析到仓库内的文件（Python、Rust `use` 路径、JS/TS、Go、C 系 include）；外部依赖直接丢弃。没有解析器的语言就没有依赖边。
 
-<sub>来源: [structure.rs:1-5](../../src/structure.rs#L1-L5) · [structure.rs:34-130](../../src/structure.rs#L34-L130) · [structure.rs:329-350](../../src/structure.rs#L329-L350) · [book.rs:2249-2255](../../src/book.rs#L2249-L2255) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>来源: [structure.rs:1-5](../../src/structure.rs#L1-L5) · [structure.rs:34-130](../../src/structure.rs#L34-L130) · [structure.rs:329-350](../../src/structure.rs#L329-L350) · [book.rs:2261-2267](../../src/book.rs#L2261-L2267) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ## 不会悄悄漂移的翻译
 
@@ -30,7 +30,7 @@ Codocia 从不翻译；它只记录每份翻译是根据哪个源文本做的。
 
 在仓库内部，源码链接是相对路径（`../src/book.rs#L10-L20`），在任何检出或 fork 中都能用；索引只写远程仓库名，从不写本地路径。`.codocia-build` 列出所有生成的文件。在动任何文件之前，`prepare_output` 先校验每个目标路径和标记文件，拒绝符号链接和逃出目录的路径。下次构建只删除清单中的文件，且只在输出目录内删除（标记文件不是清单时，构建直接停止），并拒绝覆盖任何同名的非生成文件，因此手写页面可以和书共用 `docs/`。
 
-<sub>来源: [book.rs:1108-1167](../../src/book.rs#L1108-L1167) · [book.rs:1367-1377](../../src/book.rs#L1367-L1377) · [book.rs:2592-2688](../../src/book.rs#L2592-L2688) · [book.rs:2917-2937](../../src/book.rs#L2917-L2937) · [translate.rs:529-579](../../src/translate.rs#L529-L579) · +3</sub>
+<sub>来源: [book.rs:1120-1179](../../src/book.rs#L1120-L1179) · [book.rs:1379-1389](../../src/book.rs#L1379-L1389) · [book.rs:2604-2700](../../src/book.rs#L2604-L2700) · [book.rs:2929-2949](../../src/book.rs#L2929-L2949) · [translate.rs:529-579](../../src/translate.rs#L529-L579) · +3</sub>
 
 ## 移动固定提交
 
@@ -38,4 +38,4 @@ Codocia 从不翻译；它只记录每份翻译是根据哪个源文本做的。
 
 没有这一步，每次提交刚构建的 `docs/` 或修正 `README_CN.md` 都会让固定提交落后一个，`status` 也会在只有文档变化时报告代码已变。`code_moved` 以同样方式跳过生成的输出和被忽略的文件，所以只添加构建文档的提交不会被 `status` 标记。
 
-<sub>来源: [book.rs:1060-1078](../../src/book.rs#L1060-L1078) · [book.rs:2477-2512](../../src/book.rs#L2477-L2512) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>来源: [book.rs:1072-1090](../../src/book.rs#L1072-L1090) · [book.rs:2489-2524](../../src/book.rs#L2489-L2524) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>

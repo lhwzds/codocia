@@ -25,7 +25,7 @@ dependencies between areas.
 JS/TS, Go, C-family includes) to files in the repository; anything external is
 dropped. A language without a resolver simply has no edges.
 
-<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2249-2255](../src/book.rs#L2249-L2255) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2261-2267](../src/book.rs#L2261-L2267) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ## Translations that cannot drift silently
 
@@ -66,7 +66,7 @@ refusing symlinks and escaping paths. The next build deletes only listed files, 
 that is not a manifest stops the build) and refuses to overwrite any other file with a
 generated name, so hand-written pages can share `docs/` with the book.
 
-<sub>Sources: [book.rs:1108-1167](../src/book.rs#L1108-L1167) · [book.rs:1367-1377](../src/book.rs#L1367-L1377) · [book.rs:2592-2688](../src/book.rs#L2592-L2688) · [book.rs:2917-2937](../src/book.rs#L2917-L2937) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
+<sub>Sources: [book.rs:1120-1179](../src/book.rs#L1120-L1179) · [book.rs:1379-1389](../src/book.rs#L1379-L1389) · [book.rs:2604-2700](../src/book.rs#L2604-L2700) · [book.rs:2929-2949](../src/book.rs#L2929-L2949) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
 
 ## Moving the pinned commit
 
@@ -82,4 +82,4 @@ report that the code moved when only documentation did. `code_moved`
 skips generated output and ignored files the same way, so `status` does not
 flag a commit that only added built docs.
 
-<sub>Sources: [book.rs:1060-1078](../src/book.rs#L1060-L1078) · [book.rs:2477-2512](../src/book.rs#L2477-L2512) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>Sources: [book.rs:1072-1090](../src/book.rs#L1072-L1090) · [book.rs:2489-2524](../src/book.rs#L2489-L2524) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>

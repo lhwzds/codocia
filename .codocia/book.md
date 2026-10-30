@@ -1,7 +1,7 @@
 ---
 title: Codocia
 repo: ..
-commit: f0743e89ec48a8b348afc4c04b7f13c13a83a3c8
+commit: d6f08d56943c7398644e9be3dbe793771926a883
 remote: https://github.com/lhwzds/codocia
 lang: en
 max_pages: 4

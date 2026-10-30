@@ -2,7 +2,7 @@
 title: Repetition through shared evidence
 order: 40
 evidence:
-  - src/book.rs:1993-2038 #bf5a34aebb19
+  - src/book.rs:2005-2050 #bf5a34aebb19
   - commit:87bbfdd
 ---
 
