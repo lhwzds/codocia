@@ -39,14 +39,15 @@ as a relative path (`..`), so a clone or CI checkout works unchanged.
 
 Every command finds its book with `find_book_from`: walk up from the current
 directory and take the first `.codocia/book.md`, or an older external book
-(a directory holding both `book.md` and a notes folder). `--book` overrides the search.
+(a directory holding both `book.md` and a notes folder). `--book` overrides the search; a `.codocia` found or created
+implicitly must not be a symlink.
 
 `effective_ignore` adds the book directory to the ignore globs, so the notes
 never count as code: not in coverage, not in [Code structure](structure.md), and editing a
 note does not mean the code moved. Commit `618468e` moved the book into the
 repository so the docs travel with the code they describe.
 
-<sub>Sources: [book.rs:146-166](../src/book.rs#L146-L166) · [book.rs:196-204](../src/book.rs#L196-L204) · [book.rs:1326-1340](../src/book.rs#L1326-L1340) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
+<sub>Sources: [book.rs:148-182](../src/book.rs#L148-L182) · [book.rs:215-223](../src/book.rs#L215-L223) · [book.rs:1345-1359](../src/book.rs#L1345-L1359) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
 
 ## Scope, coverage and budgets
 
@@ -64,7 +65,7 @@ Budgets scale with the code: under 20k lines `init` writes 4 pages and
 one and two CJK characters as one, and skips fenced code, so a Mermaid
 diagram is free. Over-budget pages and notes are warnings, never errors.
 
-<sub>Sources: [book.rs:236-245](../src/book.rs#L236-L245) · [book.rs:2192-2218](../src/book.rs#L2192-L2218) · [book.rs:2271-2293](../src/book.rs#L2271-L2293) · [book.rs:2101-2122](../src/book.rs#L2101-L2122) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
+<sub>Sources: [book.rs:255-264](../src/book.rs#L255-L264) · [book.rs:2211-2237](../src/book.rs#L2211-L2237) · [book.rs:2290-2312](../src/book.rs#L2290-L2312) · [book.rs:2120-2141](../src/book.rs#L2120-L2141) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
 
 ## Saving a note
 
@@ -79,4 +80,4 @@ drop evidence. Like every note write (`note rm`, `follow`, `accept`), it
 refuses a symlinked or escaping note path. Notes are plain files, one per note, so agents can write
 different pages in parallel and edit them by hand.
 
-<sub>Sources: [book.rs:384-474](../src/book.rs#L384-L474) · [book.rs:526-572](../src/book.rs#L526-L572)</sub>
+<sub>Sources: [book.rs:403-493](../src/book.rs#L403-L493) · [book.rs:545-591](../src/book.rs#L545-L591)</sub>

@@ -25,11 +25,11 @@ flowchart LR
 
 `codocia init` 在仓库中创建 `.codocia/`：`book.md` 的 frontmatter 存放大纲和设置（页面、`ignore`、预算、`langs`、`translations`、固定的 `commit`），正文是引言；每条笔记是 `notes/<page>/<id>.md`；翻译放在 `<lang>/`。`repo:` 存为相对路径（`..`），所以克隆的仓库或 CI 检出无需改动即可使用。
 
-每个命令都用 `find_book_from` 找书：从当前目录逐级向上，取第一个 `.codocia/book.md`，或旧式的外部书（同时含 `book.md` 和笔记目录的目录）。`--book` 可覆盖这一查找。
+每个命令都用 `find_book_from` 找书：从当前目录逐级向上，取第一个 `.codocia/book.md`，或旧式的外部书（同时含 `book.md` 和笔记目录的目录）。`--book` 可覆盖这一查找；自动找到或创建的 `.codocia` 不能是符号链接。
 
 `effective_ignore` 把书目录加入忽略规则，因此笔记永远不算代码：不计入覆盖，不出现在 [代码结构](structure.md)，修改笔记也不算代码变动。提交 `618468e` 把书移进仓库，让文档跟随它所描述的代码一起流转。
 
-<sub>来源: [book.rs:146-166](../../src/book.rs#L146-L166) · [book.rs:196-204](../../src/book.rs#L196-L204) · [book.rs:1326-1340](../../src/book.rs#L1326-L1340) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
+<sub>来源: [book.rs:148-182](../../src/book.rs#L148-L182) · [book.rs:215-223](../../src/book.rs#L215-L223) · [book.rs:1345-1359](../../src/book.rs#L1345-L1359) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
 
 ## 范围、覆盖与预算
 
@@ -38,10 +38,10 @@ flowchart LR
 
 预算随代码规模变化：少于 2 万行时 `init` 写入 4 页、2,500 词，少于 20 万行时为 6 页、4,000 词，否则 8 页、6,000 词；每本书都是每页 900 词、每条笔记 180 词。`word_units` 把一个拉丁词计为 1，两个 CJK 字符计为 1，并跳过围栏代码，所以 Mermaid 图不占预算。页面或笔记超出预算只是警告，不是错误。
 
-<sub>来源: [book.rs:236-245](../../src/book.rs#L236-L245) · [book.rs:2192-2218](../../src/book.rs#L2192-L2218) · [book.rs:2271-2293](../../src/book.rs#L2271-L2293) · [book.rs:2101-2122](../../src/book.rs#L2101-L2122) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
+<sub>来源: [book.rs:255-264](../../src/book.rs#L255-L264) · [book.rs:2211-2237](../../src/book.rs#L2211-L2237) · [book.rs:2290-2312](../../src/book.rs#L2290-L2312) · [book.rs:2120-2141](../../src/book.rs#L2120-L2141) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
 
 ## 保存笔记
 
 `note add` 会拒绝以下笔记：页面或 id 的 slug 不合法、页面不在 `book.md` 中、没有证据，或证据无法固定（文件不存在、行范围超出文件末尾、提交不存在），因此错误的引用永远进不了书。随后它逐项回显证据的大小和第一行非空内容，超过 120 行的范围会被标为过宽：智能体靠这段回显发现自己引错了行。新笔记排在该页已有笔记之后（`order` + 10）；`--replace` 保留所有未给出的字段，所以修改正文不会丢掉证据。和其他写笔记的操作（`note rm`、`follow`、`accept`）一样，它拒绝符号链接或逃出书目录的笔记路径。笔记是普通文件，一条一个文件，多个智能体可以并行写不同页面，也可以手工编辑。
 
-<sub>来源: [book.rs:384-474](../../src/book.rs#L384-L474) · [book.rs:526-572](../../src/book.rs#L526-L572)</sub>
+<sub>来源: [book.rs:403-493](../../src/book.rs#L403-L493) · [book.rs:545-591](../../src/book.rs#L545-L591)</sub>

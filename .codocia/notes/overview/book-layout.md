@@ -2,9 +2,9 @@
 title: Where the book lives
 order: 10
 evidence:
-  - src/book.rs:146-166 #5258f49d13c7
-  - src/book.rs:196-204 #fe0b8dd44aa4
-  - src/book.rs:1326-1340 #14e9f6f9c5cc
+  - src/book.rs:148-182 #8f35ef936ca2
+  - src/book.rs:215-223 #fe0b8dd44aa4
+  - src/book.rs:1345-1359 #14e9f6f9c5cc
   - commit:618468e
 ---
 
@@ -16,7 +16,8 @@ as a relative path (`..`), so a clone or CI checkout works unchanged.
 
 Every command finds its book with `find_book_from`: walk up from the current
 directory and take the first `.codocia/book.md`, or an older external book
-(a directory holding both `book.md` and a notes folder). `--book` overrides the search.
+(a directory holding both `book.md` and a notes folder). `--book` overrides the search; a `.codocia` found or created
+implicitly must not be a symlink.
 
 `effective_ignore` adds the book directory to the ignore globs, so the notes
 never count as code: not in coverage, not in [[structure]], and editing a

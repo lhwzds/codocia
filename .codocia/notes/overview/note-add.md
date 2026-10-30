@@ -2,8 +2,8 @@
 title: Saving a note
 order: 30
 evidence:
-  - src/book.rs:384-474 #3a6290366d7e
-  - src/book.rs:526-572 #331dcb96c313
+  - src/book.rs:403-493 #3a6290366d7e
+  - src/book.rs:545-591 #331dcb96c313
 ---
 
 `note add` refuses an invalid page or id slug, a page not in `book.md`, a note without

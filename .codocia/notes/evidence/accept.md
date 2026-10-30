@@ -2,8 +2,8 @@
 title: Reviewing changed code with accept
 order: 20
 evidence:
-  - src/book.rs:904-981 #89a5d134d8c6
-  - src/book.rs:1024-1043 #743b0aafedb8
+  - src/book.rs:923-1000 #89a5d134d8c6
+  - src/book.rs:1043-1062 #743b0aafedb8
   - commit:2658f2d
 ---
 
