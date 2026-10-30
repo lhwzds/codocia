@@ -25,7 +25,7 @@ dependencies between areas.
 JS/TS, Go, C-family includes) to files in the repository; anything external is
 dropped. A language without a resolver simply has no edges.
 
-<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2261-2267](../src/book.rs#L2261-L2267) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2294-2300](../src/book.rs#L2294-L2300) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ## Translations that cannot drift silently
 
@@ -52,21 +52,22 @@ judge the prose.
 `build` runs `follow` and the full check, and stops on any error unless
 `--force` is given. Output goes to `--out`, else the `out:` path in
 `book.md` (repository-relative, no `..`), else `docs/` for a `.codocia/`
-book and `<book>/out` for an external one. It writes `NN-slug.md` per page,
+book and `<book>/out` for an external one. The default and `out:` must stay
+inside the repository without passing through a symlink; only an explicit
+`--out` may point elsewhere. It writes `NN-slug.md` per page,
 `structure.md`, and `all.md` with every page on one page; the index is
 `README.md` inside the repository so the folder renders on GitHub. Each
 language in `langs` gets the same set in a `<lang>/` subdirectory, with a
 language switch under each title.
 
 Inside the repository, source links are relative (`../src/book.rs#L10-L20`)
-so they work in any checkout or fork; the index names the remote, never a
-local path. `.codocia-build` lists every generated file. Before touching
-anything, `prepare_output` validates every destination and the marker,
-refusing symlinks and escaping paths. The next build deletes only listed files, and only inside the output directory (a marker
-that is not a manifest stops the build) and refuses to overwrite any other file with a
-generated name, so hand-written pages can share `docs/` with the book.
+and the index names the remote, never a local path. `.codocia-build` lists
+every generated file. `prepare_output` checks every destination and the
+marker first (no symlinks, nothing outside, a non-manifest marker stops the
+build), then deletes only listed files and refuses to overwrite any other
+file, so hand-written pages can share `docs/` with the book.
 
-<sub>Sources: [book.rs:1120-1179](../src/book.rs#L1120-L1179) · [book.rs:1379-1389](../src/book.rs#L1379-L1389) · [book.rs:2604-2700](../src/book.rs#L2604-L2700) · [book.rs:2929-2949](../src/book.rs#L2929-L2949) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
+<sub>Sources: [book.rs:1149-1212](../src/book.rs#L1149-L1212) · [book.rs:1412-1422](../src/book.rs#L1412-L1422) · [book.rs:2637-2733](../src/book.rs#L2637-L2733) · [book.rs:2962-2982](../src/book.rs#L2962-L2982) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
 
 ## Moving the pinned commit
 
@@ -82,4 +83,4 @@ report that the code moved when only documentation did. `code_moved`
 skips generated output and ignored files the same way, so `status` does not
 flag a commit that only added built docs.
 
-<sub>Sources: [book.rs:1072-1090](../src/book.rs#L1072-L1090) · [book.rs:2489-2524](../src/book.rs#L2489-L2524) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>Sources: [book.rs:1072-1090](../src/book.rs#L1072-L1090) · [book.rs:2522-2557](../src/book.rs#L2522-L2557) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>

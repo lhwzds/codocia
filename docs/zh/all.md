@@ -35,7 +35,7 @@ flowchart LR
 
 `effective_ignore` 把书目录加入忽略规则，因此笔记永远不算代码：不计入覆盖，不出现在 [代码结构](#structure)，修改笔记也不算代码变动。提交 `618468e` 把书移进仓库，让文档跟随它所描述的代码一起流转。
 
-<sub>来源: [book.rs:146-166](../../src/book.rs#L146-L166) · [book.rs:196-204](../../src/book.rs#L196-L204) · [book.rs:1293-1307](../../src/book.rs#L1293-L1307) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
+<sub>来源: [book.rs:146-166](../../src/book.rs#L146-L166) · [book.rs:196-204](../../src/book.rs#L196-L204) · [book.rs:1326-1340](../../src/book.rs#L1326-L1340) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
 
 ### 范围、覆盖与预算
 
@@ -44,7 +44,7 @@ flowchart LR
 
 预算随代码规模变化：少于 2 万行时 `init` 写入 4 页、2,500 词，少于 20 万行时为 6 页、4,000 词，否则 8 页、6,000 词；每本书都是每页 900 词、每条笔记 180 词。`word_units` 把一个拉丁词计为 1，两个 CJK 字符计为 1，并跳过围栏代码，所以 Mermaid 图不占预算。页面或笔记超出预算只是警告，不是错误。
 
-<sub>来源: [book.rs:236-245](../../src/book.rs#L236-L245) · [book.rs:2159-2185](../../src/book.rs#L2159-L2185) · [book.rs:2238-2260](../../src/book.rs#L2238-L2260) · [book.rs:2068-2089](../../src/book.rs#L2068-L2089) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
+<sub>来源: [book.rs:236-245](../../src/book.rs#L236-L245) · [book.rs:2192-2218](../../src/book.rs#L2192-L2218) · [book.rs:2271-2293](../../src/book.rs#L2271-L2293) · [book.rs:2101-2122](../../src/book.rs#L2101-L2122) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
 
 ### 保存笔记
 
@@ -60,7 +60,7 @@ flowchart LR
 
 这个哈希有意做得简单而稳定：不依赖任何库，在所有平台上结果一致，也不受行尾格式变化影响。改动 `hash_lines` 会让所有现有书里的每个固定值都变成“代码已变”错误。
 
-<sub>来源: [book.rs:1675-1728](../../src/book.rs#L1675-L1728) · [book.rs:1751-1767](../../src/book.rs#L1751-L1767) · [book.rs:1863-1870](../../src/book.rs#L1863-L1870) · [lib.rs:36-43](../../src/lib.rs#L36-L43)</sub>
+<sub>来源: [book.rs:1708-1761](../../src/book.rs#L1708-L1761) · [book.rs:1784-1800](../../src/book.rs#L1784-L1800) · [book.rs:1896-1903](../../src/book.rs#L1896-L1903) · [lib.rs:36-43](../../src/lib.rs#L36-L43)</sub>
 
 ### 跟随移动的代码
 
@@ -68,7 +68,7 @@ flowchart LR
 
 `follow` 在 `check`、`accept` 和 `build` 开始时运行，并就地改写笔记文件：移动过的范围更新为新行号，未固定的条目补上固定值。文件不存在时，先在 `git_renames` 中查找；它从书的固定提交起运行 `git diff -M`，所以重命名的文件不会丢失证据。提交 `fa187ba` 把原来的 `pin` 命令并入这一步，只有真正改动的代码才需要人来处理。
 
-<sub>来源: [book.rs:1814-1860](../../src/book.rs#L1814-L1860) · [book.rs:808-848](../../src/book.rs#L808-L848) · [book.rs:2526-2557](../../src/book.rs#L2526-L2557) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
+<sub>来源: [book.rs:1847-1893](../../src/book.rs#L1847-L1893) · [book.rs:808-848](../../src/book.rs#L808-L848) · [book.rs:2559-2590](../../src/book.rs#L2559-L2590) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
 
 ### 用 accept 审阅变动的代码
 
@@ -86,13 +86,13 @@ flowchart LR
 
 `commit:` 条目必须存在，并且是 `HEAD` 的祖先或位于 origin 的某个分支上（没有 origin 时任意远程分支均可），因为被 rebase 改写的提交可能仍留在本地，而它在托管平台上的链接已经 404（提交 `2853a01`、`34b80cd`）。
 
-<sub>来源: [book.rs:1940-2002](../../src/book.rs#L1940-L2002) · [book.rs:575-668](../../src/book.rs#L575-L668) · [book.rs:1771-1812](../../src/book.rs#L1771-L1812) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
+<sub>来源: [book.rs:1973-2035](../../src/book.rs#L1973-L2035) · [book.rs:575-668](../../src/book.rs#L575-L668) · [book.rs:1804-1845](../../src/book.rs#L1804-L1845) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
 
 ### 通过共享证据发现重复
 
 智能体写的文档里最常见的冗余，是同一机制在三个页面上各讲一遍。`repetition_warnings` 依据证据而不是文字来发现它：不同页面上的两条笔记若共享至少两个文件范围，且每处重叠都不少于较短范围的一半，就会收到警告，列出两条笔记和共享的行。只共享一个范围属于正常的交叉引用，不会报警。解决办法是只在一个页面讲解，其他页面链接过去。
 
-<sub>来源: [book.rs:2005-2050](../../src/book.rs#L2005-L2050) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>
+<sub>来源: [book.rs:2038-2083](../../src/book.rs#L2038-L2083) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>
 
 <a id="output"></a>
 
@@ -106,7 +106,7 @@ flowchart LR
 
 `import_edges` 按语言把导入解析到仓库内的文件（Python、Rust `use` 路径、JS/TS、Go、C 系 include）；外部依赖直接丢弃。没有解析器的语言就没有依赖边。
 
-<sub>来源: [structure.rs:1-5](../../src/structure.rs#L1-L5) · [structure.rs:34-130](../../src/structure.rs#L34-L130) · [structure.rs:329-350](../../src/structure.rs#L329-L350) · [book.rs:2261-2267](../../src/book.rs#L2261-L2267) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>来源: [structure.rs:1-5](../../src/structure.rs#L1-L5) · [structure.rs:34-130](../../src/structure.rs#L34-L130) · [structure.rs:329-350](../../src/structure.rs#L329-L350) · [book.rs:2294-2300](../../src/book.rs#L2294-L2300) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ### 不会悄悄漂移的翻译
 
@@ -118,11 +118,11 @@ Codocia 从不翻译；它只记录每份翻译是根据哪个源文本做的。
 
 ### build 写出什么
 
-`build` 先运行 `follow` 和完整检查，有任何错误就停止，除非给出 `--force`。输出目录依次取 `--out`、`book.md` 中的 `out:` 路径（相对于仓库，不能含 `..`），否则 `.codocia/` 中的书写到 `docs/`，外部书写到 `<book>/out`。它为每页写一个 `NN-slug.md`，外加 `structure.md`，以及把所有页面合在一页的 `all.md`；在仓库内部时索引名为 `README.md`，让该目录在 GitHub 上直接显示。`langs` 中的每种语言在 `<lang>/` 子目录下生成同样一套文件，每个标题下有语言切换。
+`build` 先运行 `follow` 和完整检查，有任何错误就停止，除非给出 `--force`。输出目录依次取 `--out`、`book.md` 中的 `out:` 路径（相对于仓库，不能含 `..`），否则 `.codocia/` 中的书写到 `docs/`，外部书写到 `<book>/out`。默认目录和 `out:` 必须留在仓库内，且路径上不能有符号链接；只有显式的 `--out` 可以指向别处。它为每页写一个 `NN-slug.md`，外加 `structure.md`，以及把所有页面合在一页的 `all.md`；在仓库内部时索引名为 `README.md`，让该目录在 GitHub 上直接显示。`langs` 中的每种语言在 `<lang>/` 子目录下生成同样一套文件，每个标题下有语言切换。
 
-在仓库内部，源码链接是相对路径（`../src/book.rs#L10-L20`），在任何检出或 fork 中都能用；索引只写远程仓库名，从不写本地路径。`.codocia-build` 列出所有生成的文件。在动任何文件之前，`prepare_output` 先校验每个目标路径和标记文件，拒绝符号链接和逃出目录的路径。下次构建只删除清单中的文件，且只在输出目录内删除（标记文件不是清单时，构建直接停止），并拒绝覆盖任何同名的非生成文件，因此手写页面可以和书共用 `docs/`。
+在仓库内部，源码链接是相对路径（`../src/book.rs#L10-L20`），索引只写远程仓库名，从不写本地路径。`.codocia-build` 列出所有生成的文件。`prepare_output` 先检查每个目标路径和标记文件（不允许符号链接，不能逃出目录，标记文件不是清单时构建直接停止），然后只删除清单中的文件，并拒绝覆盖任何其他文件，因此手写页面可以和书共用 `docs/`。
 
-<sub>来源: [book.rs:1120-1179](../../src/book.rs#L1120-L1179) · [book.rs:1379-1389](../../src/book.rs#L1379-L1389) · [book.rs:2604-2700](../../src/book.rs#L2604-L2700) · [book.rs:2929-2949](../../src/book.rs#L2929-L2949) · [translate.rs:529-579](../../src/translate.rs#L529-L579) · +3</sub>
+<sub>来源: [book.rs:1149-1212](../../src/book.rs#L1149-L1212) · [book.rs:1412-1422](../../src/book.rs#L1412-L1422) · [book.rs:2637-2733](../../src/book.rs#L2637-L2733) · [book.rs:2962-2982](../../src/book.rs#L2962-L2982) · [translate.rs:529-579](../../src/translate.rs#L529-L579) · +3</sub>
 
 ### 移动固定提交
 
@@ -130,7 +130,7 @@ Codocia 从不翻译；它只记录每份翻译是根据哪个源文本做的。
 
 没有这一步，每次提交刚构建的 `docs/` 或修正 `README_CN.md` 都会让固定提交落后一个，`status` 也会在只有文档变化时报告代码已变。`code_moved` 以同样方式跳过生成的输出和被忽略的文件，所以只添加构建文档的提交不会被 `status` 标记。
 
-<sub>来源: [book.rs:1072-1090](../../src/book.rs#L1072-L1090) · [book.rs:2489-2524](../../src/book.rs#L2489-L2524) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>来源: [book.rs:1072-1090](../../src/book.rs#L1072-L1090) · [book.rs:2522-2557](../../src/book.rs#L2522-L2557) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
 
 <a id="contributing"></a>
 
@@ -147,7 +147,7 @@ npm test --prefix npm
 
 Tests 工作流在每次推送到 `main` 和每个 pull request 时运行前三项和 `cargo publish --dry-run`。`SKILL.md` 通过 `include_str!` 编译进二进制，所以修改它会改变 `codocia skill` 的输出，并且需要重新构建。对哈希、frontmatter 格式或 `book.md` 键的任何改动，都会破坏其他仓库中已提交的书；请保持旧格式可读。
 
-<sub>来源: [book.rs:3005-3038](../../src/book.rs#L3005-L3038) · [book.rs:3356-3365](../../src/book.rs#L3356-L3365) · [lib.rs:14-16](../../src/lib.rs#L14-L16) · [main.rs:232-242](../../src/main.rs#L232-L242) · [test.yml](../../.github/workflows/test.yml) · +1</sub>
+<sub>来源: [book.rs:3038-3071](../../src/book.rs#L3038-L3071) · [book.rs:3479-3488](../../src/book.rs#L3479-L3488) · [lib.rs:14-16](../../src/lib.rs#L14-L16) · [main.rs:232-242](../../src/main.rs#L232-L242) · [test.yml](../../.github/workflows/test.yml) · +1</sub>
 
 ### 发布与 npm 包装
 
@@ -163,7 +163,7 @@ npm 包本身不带二进制。它的 `postinstall` 脚本按平台和包自身�
 
 本页由 Codocia 根据代码自动生成，每次 build 重新计算：功能区划分、各区自带的说明、区之间的 import 依赖，以及讲解各区的页面。
 
-范围内共 16 个文件，7,797 行；已排除 `Cargo.lock`、`LICENSE`、`.gitignore`、`homebrew-tap-template/**`、`docs/**`、`**/.DS_Store`
+范围内共 16 个文件，7,920 行；已排除 `Cargo.lock`、`LICENSE`、`.gitignore`、`homebrew-tap-template/**`、`docs/**`、`**/.DS_Store`
 
 ### 文件结构
 
@@ -173,7 +173,7 @@ npm 包本身不带二进制。它的 `postinstall` 脚本按平台和包自身�
   讲解：[参与开发](#contributing) (1)
 - `.github/` — 269 行，2 个文件\
   讲解：[参与开发](#contributing) (2)
-- `src/` — 6,813 行，5 个文件。Library API for Codocia.\
+- `src/` — 6,936 行，5 个文件。Library API for Codocia.\
   核心文件：`book.rs` `structure.rs` `lib.rs`\
   讲解：[概览](#overview) (4), [证据与审阅](#evidence) (5), [结构、翻译与构建](#output) (4), [参与开发](#contributing) (1)
 

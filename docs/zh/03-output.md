@@ -14,7 +14,7 @@ title: 结构、翻译与构建
 
 `import_edges` 按语言把导入解析到仓库内的文件（Python、Rust `use` 路径、JS/TS、Go、C 系 include）；外部依赖直接丢弃。没有解析器的语言就没有依赖边。
 
-<sub>来源: [structure.rs:1-5](../../src/structure.rs#L1-L5) · [structure.rs:34-130](../../src/structure.rs#L34-L130) · [structure.rs:329-350](../../src/structure.rs#L329-L350) · [book.rs:2261-2267](../../src/book.rs#L2261-L2267) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>来源: [structure.rs:1-5](../../src/structure.rs#L1-L5) · [structure.rs:34-130](../../src/structure.rs#L34-L130) · [structure.rs:329-350](../../src/structure.rs#L329-L350) · [book.rs:2294-2300](../../src/book.rs#L2294-L2300) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ## 不会悄悄漂移的翻译
 
@@ -26,11 +26,11 @@ Codocia 从不翻译；它只记录每份翻译是根据哪个源文本做的。
 
 ## build 写出什么
 
-`build` 先运行 `follow` 和完整检查，有任何错误就停止，除非给出 `--force`。输出目录依次取 `--out`、`book.md` 中的 `out:` 路径（相对于仓库，不能含 `..`），否则 `.codocia/` 中的书写到 `docs/`，外部书写到 `<book>/out`。它为每页写一个 `NN-slug.md`，外加 `structure.md`，以及把所有页面合在一页的 `all.md`；在仓库内部时索引名为 `README.md`，让该目录在 GitHub 上直接显示。`langs` 中的每种语言在 `<lang>/` 子目录下生成同样一套文件，每个标题下有语言切换。
+`build` 先运行 `follow` 和完整检查，有任何错误就停止，除非给出 `--force`。输出目录依次取 `--out`、`book.md` 中的 `out:` 路径（相对于仓库，不能含 `..`），否则 `.codocia/` 中的书写到 `docs/`，外部书写到 `<book>/out`。默认目录和 `out:` 必须留在仓库内，且路径上不能有符号链接；只有显式的 `--out` 可以指向别处。它为每页写一个 `NN-slug.md`，外加 `structure.md`，以及把所有页面合在一页的 `all.md`；在仓库内部时索引名为 `README.md`，让该目录在 GitHub 上直接显示。`langs` 中的每种语言在 `<lang>/` 子目录下生成同样一套文件，每个标题下有语言切换。
 
-在仓库内部，源码链接是相对路径（`../src/book.rs#L10-L20`），在任何检出或 fork 中都能用；索引只写远程仓库名，从不写本地路径。`.codocia-build` 列出所有生成的文件。在动任何文件之前，`prepare_output` 先校验每个目标路径和标记文件，拒绝符号链接和逃出目录的路径。下次构建只删除清单中的文件，且只在输出目录内删除（标记文件不是清单时，构建直接停止），并拒绝覆盖任何同名的非生成文件，因此手写页面可以和书共用 `docs/`。
+在仓库内部，源码链接是相对路径（`../src/book.rs#L10-L20`），索引只写远程仓库名，从不写本地路径。`.codocia-build` 列出所有生成的文件。`prepare_output` 先检查每个目标路径和标记文件（不允许符号链接，不能逃出目录，标记文件不是清单时构建直接停止），然后只删除清单中的文件，并拒绝覆盖任何其他文件，因此手写页面可以和书共用 `docs/`。
 
-<sub>来源: [book.rs:1120-1179](../../src/book.rs#L1120-L1179) · [book.rs:1379-1389](../../src/book.rs#L1379-L1389) · [book.rs:2604-2700](../../src/book.rs#L2604-L2700) · [book.rs:2929-2949](../../src/book.rs#L2929-L2949) · [translate.rs:529-579](../../src/translate.rs#L529-L579) · +3</sub>
+<sub>来源: [book.rs:1149-1212](../../src/book.rs#L1149-L1212) · [book.rs:1412-1422](../../src/book.rs#L1412-L1422) · [book.rs:2637-2733](../../src/book.rs#L2637-L2733) · [book.rs:2962-2982](../../src/book.rs#L2962-L2982) · [translate.rs:529-579](../../src/translate.rs#L529-L579) · +3</sub>
 
 ## 移动固定提交
 
@@ -38,4 +38,4 @@ Codocia 从不翻译；它只记录每份翻译是根据哪个源文本做的。
 
 没有这一步，每次提交刚构建的 `docs/` 或修正 `README_CN.md` 都会让固定提交落后一个，`status` 也会在只有文档变化时报告代码已变。`code_moved` 以同样方式跳过生成的输出和被忽略的文件，所以只添加构建文档的提交不会被 `status` 标记。
 
-<sub>来源: [book.rs:1072-1090](../../src/book.rs#L1072-L1090) · [book.rs:2489-2524](../../src/book.rs#L2489-L2524) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>来源: [book.rs:1072-1090](../../src/book.rs#L1072-L1090) · [book.rs:2522-2557](../../src/book.rs#L2522-L2557) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>

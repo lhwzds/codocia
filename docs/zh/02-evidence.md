@@ -10,7 +10,7 @@ title: 证据与审阅
 
 这个哈希有意做得简单而稳定：不依赖任何库，在所有平台上结果一致，也不受行尾格式变化影响。改动 `hash_lines` 会让所有现有书里的每个固定值都变成“代码已变”错误。
 
-<sub>来源: [book.rs:1675-1728](../../src/book.rs#L1675-L1728) · [book.rs:1751-1767](../../src/book.rs#L1751-L1767) · [book.rs:1863-1870](../../src/book.rs#L1863-L1870) · [lib.rs:36-43](../../src/lib.rs#L36-L43)</sub>
+<sub>来源: [book.rs:1708-1761](../../src/book.rs#L1708-L1761) · [book.rs:1784-1800](../../src/book.rs#L1784-L1800) · [book.rs:1896-1903](../../src/book.rs#L1896-L1903) · [lib.rs:36-43](../../src/lib.rs#L36-L43)</sub>
 
 ## 跟随移动的代码
 
@@ -18,7 +18,7 @@ title: 证据与审阅
 
 `follow` 在 `check`、`accept` 和 `build` 开始时运行，并就地改写笔记文件：移动过的范围更新为新行号，未固定的条目补上固定值。文件不存在时，先在 `git_renames` 中查找；它从书的固定提交起运行 `git diff -M`，所以重命名的文件不会丢失证据。提交 `fa187ba` 把原来的 `pin` 命令并入这一步，只有真正改动的代码才需要人来处理。
 
-<sub>来源: [book.rs:1814-1860](../../src/book.rs#L1814-L1860) · [book.rs:808-848](../../src/book.rs#L808-L848) · [book.rs:2526-2557](../../src/book.rs#L2526-L2557) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
+<sub>来源: [book.rs:1847-1893](../../src/book.rs#L1847-L1893) · [book.rs:808-848](../../src/book.rs#L808-L848) · [book.rs:2559-2590](../../src/book.rs#L2559-L2590) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
 
 ## 用 accept 审阅变动的代码
 
@@ -36,10 +36,10 @@ title: 证据与审阅
 
 `commit:` 条目必须存在，并且是 `HEAD` 的祖先或位于 origin 的某个分支上（没有 origin 时任意远程分支均可），因为被 rebase 改写的提交可能仍留在本地，而它在托管平台上的链接已经 404（提交 `2853a01`、`34b80cd`）。
 
-<sub>来源: [book.rs:1940-2002](../../src/book.rs#L1940-L2002) · [book.rs:575-668](../../src/book.rs#L575-L668) · [book.rs:1771-1812](../../src/book.rs#L1771-L1812) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
+<sub>来源: [book.rs:1973-2035](../../src/book.rs#L1973-L2035) · [book.rs:575-668](../../src/book.rs#L575-L668) · [book.rs:1804-1845](../../src/book.rs#L1804-L1845) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
 
 ## 通过共享证据发现重复
 
 智能体写的文档里最常见的冗余，是同一机制在三个页面上各讲一遍。`repetition_warnings` 依据证据而不是文字来发现它：不同页面上的两条笔记若共享至少两个文件范围，且每处重叠都不少于较短范围的一半，就会收到警告，列出两条笔记和共享的行。只共享一个范围属于正常的交叉引用，不会报警。解决办法是只在一个页面讲解，其他页面链接过去。
 
-<sub>来源: [book.rs:2005-2050](../../src/book.rs#L2005-L2050) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>
+<sub>来源: [book.rs:2038-2083](../../src/book.rs#L2038-L2083) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>

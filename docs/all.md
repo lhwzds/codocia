@@ -55,7 +55,7 @@ never count as code: not in coverage, not in [Code structure](#structure), and e
 note does not mean the code moved. Commit `618468e` moved the book into the
 repository so the docs travel with the code they describe.
 
-<sub>Sources: [book.rs:146-166](../src/book.rs#L146-L166) · [book.rs:196-204](../src/book.rs#L196-L204) · [book.rs:1293-1307](../src/book.rs#L1293-L1307) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
+<sub>Sources: [book.rs:146-166](../src/book.rs#L146-L166) · [book.rs:196-204](../src/book.rs#L196-L204) · [book.rs:1326-1340](../src/book.rs#L1326-L1340) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
 
 ### Scope, coverage and budgets
 
@@ -73,7 +73,7 @@ Budgets scale with the code: under 20k lines `init` writes 4 pages and
 one and two CJK characters as one, and skips fenced code, so a Mermaid
 diagram is free. Over-budget pages and notes are warnings, never errors.
 
-<sub>Sources: [book.rs:236-245](../src/book.rs#L236-L245) · [book.rs:2159-2185](../src/book.rs#L2159-L2185) · [book.rs:2238-2260](../src/book.rs#L2238-L2260) · [book.rs:2068-2089](../src/book.rs#L2068-L2089) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
+<sub>Sources: [book.rs:236-245](../src/book.rs#L236-L245) · [book.rs:2192-2218](../src/book.rs#L2192-L2218) · [book.rs:2271-2293](../src/book.rs#L2271-L2293) · [book.rs:2101-2122](../src/book.rs#L2101-L2122) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
 
 ### Saving a note
 
@@ -107,7 +107,7 @@ The hash is deliberately dumb and stable: no dependency, identical on every
 platform, and blind to reformatting at line ends. Changing `hash_lines`
 would turn every pin in every existing book into a "code changed" error.
 
-<sub>Sources: [book.rs:1675-1728](../src/book.rs#L1675-L1728) · [book.rs:1751-1767](../src/book.rs#L1751-L1767) · [book.rs:1863-1870](../src/book.rs#L1863-L1870) · [lib.rs:36-43](../src/lib.rs#L36-L43)</sub>
+<sub>Sources: [book.rs:1708-1761](../src/book.rs#L1708-L1761) · [book.rs:1784-1800](../src/book.rs#L1784-L1800) · [book.rs:1896-1903](../src/book.rs#L1896-L1903) · [lib.rs:36-43](../src/lib.rs#L36-L43)</sub>
 
 ### Following moved code
 
@@ -125,7 +125,7 @@ get a pin. A missing file is first looked up in `git_renames`, which runs
 evidence. Commit `fa187ba` folded the old `pin` command into this step,
 so only code that really changed needs a person.
 
-<sub>Sources: [book.rs:1814-1860](../src/book.rs#L1814-L1860) · [book.rs:808-848](../src/book.rs#L808-L848) · [book.rs:2526-2557](../src/book.rs#L2526-L2557) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
+<sub>Sources: [book.rs:1847-1893](../src/book.rs#L1847-L1893) · [book.rs:808-848](../src/book.rs#L808-L848) · [book.rs:2559-2590](../src/book.rs#L2559-L2590) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
 
 ### Reviewing changed code with accept
 
@@ -164,7 +164,7 @@ branch (any remote branch when there is no origin), because a commit
 rewritten by a rebase can survive locally while its link 404s on the host
 (commits `2853a01`, `34b80cd`).
 
-<sub>Sources: [book.rs:1940-2002](../src/book.rs#L1940-L2002) · [book.rs:575-668](../src/book.rs#L575-L668) · [book.rs:1771-1812](../src/book.rs#L1771-L1812) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
+<sub>Sources: [book.rs:1973-2035](../src/book.rs#L1973-L2035) · [book.rs:575-668](../src/book.rs#L575-L668) · [book.rs:1804-1845](../src/book.rs#L1804-L1845) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
 
 ### Repetition through shared evidence
 
@@ -176,7 +176,7 @@ both notes and the shared lines. One shared range is an ordinary
 cross-reference and passes. The fix is to keep the explanation on one page
 and link to it from the others.
 
-<sub>Sources: [book.rs:2005-2050](../src/book.rs#L2005-L2050) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>
+<sub>Sources: [book.rs:2038-2083](../src/book.rs#L2038-L2083) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>
 
 <a id="output"></a>
 
@@ -201,7 +201,7 @@ dependencies between areas.
 JS/TS, Go, C-family includes) to files in the repository; anything external is
 dropped. A language without a resolver simply has no edges.
 
-<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2261-2267](../src/book.rs#L2261-L2267) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2294-2300](../src/book.rs#L2294-L2300) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ### Translations that cannot drift silently
 
@@ -228,21 +228,22 @@ judge the prose.
 `build` runs `follow` and the full check, and stops on any error unless
 `--force` is given. Output goes to `--out`, else the `out:` path in
 `book.md` (repository-relative, no `..`), else `docs/` for a `.codocia/`
-book and `<book>/out` for an external one. It writes `NN-slug.md` per page,
+book and `<book>/out` for an external one. The default and `out:` must stay
+inside the repository without passing through a symlink; only an explicit
+`--out` may point elsewhere. It writes `NN-slug.md` per page,
 `structure.md`, and `all.md` with every page on one page; the index is
 `README.md` inside the repository so the folder renders on GitHub. Each
 language in `langs` gets the same set in a `<lang>/` subdirectory, with a
 language switch under each title.
 
 Inside the repository, source links are relative (`../src/book.rs#L10-L20`)
-so they work in any checkout or fork; the index names the remote, never a
-local path. `.codocia-build` lists every generated file. Before touching
-anything, `prepare_output` validates every destination and the marker,
-refusing symlinks and escaping paths. The next build deletes only listed files, and only inside the output directory (a marker
-that is not a manifest stops the build) and refuses to overwrite any other file with a
-generated name, so hand-written pages can share `docs/` with the book.
+and the index names the remote, never a local path. `.codocia-build` lists
+every generated file. `prepare_output` checks every destination and the
+marker first (no symlinks, nothing outside, a non-manifest marker stops the
+build), then deletes only listed files and refuses to overwrite any other
+file, so hand-written pages can share `docs/` with the book.
 
-<sub>Sources: [book.rs:1120-1179](../src/book.rs#L1120-L1179) · [book.rs:1379-1389](../src/book.rs#L1379-L1389) · [book.rs:2604-2700](../src/book.rs#L2604-L2700) · [book.rs:2929-2949](../src/book.rs#L2929-L2949) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
+<sub>Sources: [book.rs:1149-1212](../src/book.rs#L1149-L1212) · [book.rs:1412-1422](../src/book.rs#L1412-L1422) · [book.rs:2637-2733](../src/book.rs#L2637-L2733) · [book.rs:2962-2982](../src/book.rs#L2962-L2982) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
 
 ### Moving the pinned commit
 
@@ -258,7 +259,7 @@ report that the code moved when only documentation did. `code_moved`
 skips generated output and ignored files the same way, so `status` does not
 flag a commit that only added built docs.
 
-<sub>Sources: [book.rs:1072-1090](../src/book.rs#L1072-L1090) · [book.rs:2489-2524](../src/book.rs#L2489-L2524) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>Sources: [book.rs:1072-1090](../src/book.rs#L1072-L1090) · [book.rs:2522-2557](../src/book.rs#L2522-L2557) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
 
 <a id="contributing"></a>
 
@@ -285,7 +286,7 @@ output and needs a rebuild. Any change to the hash, the frontmatter format
 or the `book.md` keys breaks books already committed in other
 repositories; keep old forms readable.
 
-<sub>Sources: [book.rs:3005-3038](../src/book.rs#L3005-L3038) · [book.rs:3356-3365](../src/book.rs#L3356-L3365) · [lib.rs:14-16](../src/lib.rs#L14-L16) · [main.rs:232-242](../src/main.rs#L232-L242) · [test.yml](../.github/workflows/test.yml) · +1</sub>
+<sub>Sources: [book.rs:3038-3071](../src/book.rs#L3038-L3071) · [book.rs:3479-3488](../src/book.rs#L3479-L3488) · [lib.rs:14-16](../src/lib.rs#L14-L16) · [main.rs:232-242](../src/main.rs#L232-L242) · [test.yml](../.github/workflows/test.yml) · +1</sub>
 
 ### Releases and the npm wrapper
 
@@ -313,7 +314,7 @@ GitHub release job: without the release assets, installs fail.
 
 Generated by Codocia from the code on every build: areas, each area's own description, import dependencies between areas, and the pages that explain them.
 
-In scope: 16 files, 7,797 lines; excluded `Cargo.lock`, `LICENSE`, `.gitignore`, `homebrew-tap-template/**`, `docs/**`, `**/.DS_Store`
+In scope: 16 files, 7,920 lines; excluded `Cargo.lock`, `LICENSE`, `.gitignore`, `homebrew-tap-template/**`, `docs/**`, `**/.DS_Store`
 
 ### Files
 
@@ -323,7 +324,7 @@ In scope: 16 files, 7,797 lines; excluded `Cargo.lock`, `LICENSE`, `.gitignore`,
   Explained in: [Contributing](#contributing) (1)
 - `.github/` — 269 lines, 2 files\
   Explained in: [Contributing](#contributing) (2)
-- `src/` — 6,813 lines, 5 files. Library API for Codocia.\
+- `src/` — 6,936 lines, 5 files. Library API for Codocia.\
   Hub files: `book.rs` `structure.rs` `lib.rs`\
   Explained in: [Overview](#overview) (4), [Evidence and review](#evidence) (5), [Structure, translations and build](#output) (4), [Contributing](#contributing) (1)
 

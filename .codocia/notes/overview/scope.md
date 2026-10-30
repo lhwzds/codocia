@@ -3,9 +3,9 @@ title: Scope, coverage and budgets
 order: 20
 evidence:
   - src/book.rs:236-245 #0cef52c03fc7
-  - src/book.rs:2159-2185 #619c46ee0919
-  - src/book.rs:2238-2260 #20c9f90f7b92
-  - src/book.rs:2068-2089 #37405e912de3
+  - src/book.rs:2192-2218 #619c46ee0919
+  - src/book.rs:2271-2293 #20c9f90f7b92
+  - src/book.rs:2101-2122 #37405e912de3
   - commit:ec1da64
   - commit:50225b2
 ---

@@ -3,7 +3,7 @@ title: Moving the pinned commit
 order: 30
 evidence:
   - src/book.rs:1072-1090 #259f0f0e3b2e
-  - src/book.rs:2489-2524 #09d42070544b
+  - src/book.rs:2522-2557 #09d42070544b
   - commit:ed8fc0e
   - commit:b8905c3
 ---
