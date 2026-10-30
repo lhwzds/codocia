@@ -39,31 +39,31 @@ enum Command {
         /// Also list the files under this directory with their cited state.
         #[arg(long)]
         area: Option<String>,
+        /// Print the generated code structure.
+        #[arg(long)]
+        map: bool,
+        /// Print git history analysis.
+        #[arg(long)]
+        history: bool,
+        #[arg(long, default_value_t = 15, requires = "history")]
+        limit: usize,
+        #[arg(long, default_value_t = 1000, requires = "history")]
+        window: usize,
     },
     /// Manage notes.
     Note {
         #[command(subcommand)]
         command: NoteCommand,
     },
-    /// Pin new evidence and follow moved code; --force re-pins reviewed stale notes.
-    Pin {
+    /// Record review of notes or translations.
+    Accept {
         #[arg(long)]
         book: Option<PathBuf>,
-        /// Notes (`page/id` or `id`) whose stale evidence was reviewed.
-        #[arg(long = "force")]
-        force: Vec<String>,
-    },
-    /// Move the book's pinned commit to the repository HEAD once check passes.
-    Rebase {
-        #[arg(long)]
-        book: Option<PathBuf>,
-    },
-    /// Record that translations match their current source (see `langs:` and `translations:`).
-    Sync {
-        #[arg(long)]
-        book: Option<PathBuf>,
-        /// A language, `<lang>/book`, `<lang>/<page>/<id>`, or a file from `translations:`.
+        #[arg(required = true)]
         targets: Vec<String>,
+        /// Accept a changed range even if it appears to cover different code.
+        #[arg(long)]
+        force: bool,
     },
     /// Validate evidence, links, and budgets.
     Check {
@@ -72,29 +72,6 @@ enum Command {
         /// Only report problems of this page.
         #[arg(long)]
         page: Option<String>,
-    },
-    /// Mine git history for hot files, structural commits, and design changes.
-    History {
-        #[arg(long)]
-        book: Option<PathBuf>,
-        #[arg(long, default_value_t = 15)]
-        limit: usize,
-        /// Recent commits scanned for hot files and wide commits.
-        #[arg(long, default_value_t = 1000)]
-        window: usize,
-    },
-    /// Print the generated code structure: areas, dependencies, pages.
-    Map {
-        #[arg(long)]
-        book: Option<PathBuf>,
-        #[arg(long, default_value_t = 30)]
-        areas: usize,
-    },
-    /// Print one rendered page to stdout (`structure` for the generated map).
-    Show {
-        #[arg(long)]
-        book: Option<PathBuf>,
-        page: String,
     },
     /// Compile notes into Markdown pages, index.md, and all.md.
     Build {
@@ -176,8 +153,26 @@ fn main() -> Result<()> {
             title,
             lang,
         }),
-        Some(Command::Status { book, areas, area }) => {
-            book::status(&book::find_book(book.as_deref())?, areas, area.as_deref())
+        Some(Command::Status {
+            book,
+            areas,
+            area,
+            map,
+            history,
+            limit,
+            window,
+        }) => {
+            let book = book::find_book(book.as_deref())?;
+            if map {
+                book::map(&book, areas)?;
+            }
+            if history {
+                book::history(&book, limit, window)?;
+            }
+            if !map && !history || area.is_some() {
+                book::status(&book, areas, area.as_deref())?;
+            }
+            Ok(())
         }
         Some(Command::Note {
             command:
@@ -220,28 +215,21 @@ fn main() -> Result<()> {
         Some(Command::Note {
             command: NoteCommand::Rm { book, name },
         }) => book::note_rm(&book::find_book(book.as_deref())?, &name),
-        Some(Command::Pin { book, force }) => book::pin(&book::find_book(book.as_deref())?, &force),
-        Some(Command::Rebase { book }) => book::rebase(&book::find_book(book.as_deref())?),
-        Some(Command::Sync { book, targets }) => {
-            codocia::translate::sync(&book::find_book(book.as_deref())?, &targets)
-        }
+        Some(Command::Accept {
+            book,
+            targets,
+            force,
+        }) => book::accept(&book::find_book(book.as_deref())?, &targets, force),
         Some(Command::Check { book, page }) => {
             book::check(&book::find_book(book.as_deref())?, page.as_deref())
         }
-        Some(Command::History {
-            book,
-            limit,
-            window,
-        }) => book::history(&book::find_book(book.as_deref())?, limit, window),
-        Some(Command::Map { book, areas }) => book::map(&book::find_book(book.as_deref())?, areas),
-        Some(Command::Show { book, page }) => book::show(&book::find_book(book.as_deref())?, &page),
         Some(Command::Build { book, out, force }) => {
             book::build(&book::find_book(book.as_deref())?, out, force)
         }
     }
 }
 
-/// Exit quietly when stdout is closed early (for example `codocia map | head`)
+/// Exit quietly when stdout is closed early (for example `codocia status --map | head`)
 /// instead of panicking on a broken pipe.
 #[cfg(unix)]
 fn reset_sigpipe() {

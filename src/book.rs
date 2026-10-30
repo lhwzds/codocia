@@ -794,6 +794,205 @@ pub fn pin(book_dir: &Path, force: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Follow unchanged citations and pin new ones before checking or reviewing.
+fn follow(book: &Book) -> Result<usize> {
+    let repo = book.repo_path();
+    let renames = git_renames(&repo, &book.commit);
+    let mut moved = 0;
+    for mut note in load_notes(book)? {
+        let mut dirty = false;
+        for item in &mut note.evidence {
+            let mut item_moved = false;
+            if let EvidenceRef::File { path, .. } = &mut item.target
+                && !repo.join(path.as_str()).exists()
+                && let Some(new_path) = renames.get(path.as_str())
+            {
+                *path = new_path.clone();
+                dirty = true;
+                item_moved = true;
+            }
+            match evidence_state(&repo, item) {
+                EvidenceState::Unpinned => {
+                    item.pin = pin_for(&repo, &item.target)?;
+                    dirty = true;
+                }
+                EvidenceState::Moved(start, end) => {
+                    if let EvidenceRef::File { lines, .. } = &mut item.target {
+                        *lines = Some((start, end));
+                    }
+                    dirty = true;
+                    item_moved = true;
+                }
+                _ => {}
+            }
+            moved += usize::from(item_moved);
+        }
+        if dirty {
+            write_file(
+                note_path(book, &note.page, &note.id),
+                render_note(&note).as_bytes(),
+            )?;
+        }
+    }
+    Ok(moved)
+}
+
+fn follow_and_report(book: &Book) -> Result<()> {
+    let moved = follow(book)?;
+    if moved > 0 {
+        println!("followed {moved} moved citation(s)");
+    }
+    Ok(())
+}
+
+/// Record review of note evidence or translations.
+pub fn accept(book_dir: &Path, targets: &[String], force: bool) -> Result<()> {
+    if targets.is_empty() {
+        bail!(
+            "specify a note (page/id or unique id), language, language/book, language/page/id, or translation file"
+        );
+    }
+    let book = load_book(book_dir)?;
+    follow_and_report(&book)?;
+    let notes = load_notes(&book)?;
+    let repo = book.repo_path();
+    let renames = git_renames(&repo, &book.commit);
+    let mut selected = BTreeSet::new();
+    let mut translations = Vec::new();
+    for target in targets {
+        if crate::translate::is_target(&book, &notes, target)? {
+            translations.push(target.clone());
+            continue;
+        }
+        let matches: Vec<_> = notes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| target == &format!("{}/{}", n.page, n.id) || target == &n.id)
+            .map(|(i, _)| i)
+            .collect();
+        match matches.as_slice() {
+            [i] => {
+                selected.insert(*i);
+            }
+            [] => bail!(
+                "unknown target `{target}`; use page/id, a unique id, language, language/book, language/page/id, or a translation file from translations:"
+            ),
+            _ => bail!("ambiguous note id `{target}`; use page/id"),
+        }
+    }
+    let mut refused = false;
+    for i in selected {
+        let mut note = notes[i].clone();
+        let name = format!("{}/{}", note.page, note.id);
+        let mut bad = false;
+        let mut dirty = false;
+        for item in &mut note.evidence {
+            match evidence_state(&repo, item) {
+                EvidenceState::Stale => {}
+                EvidenceState::Missing | EvidenceState::BadRange | EvidenceState::BadRef(_) => {
+                    println!(
+                        "{name}: cannot accept invalid evidence {}; fix it in the note first",
+                        render_evidence(item)
+                    );
+                    bad = true;
+                    continue;
+                }
+                _ => continue,
+            }
+            if let EvidenceRef::File { path, lines } = &item.target {
+                let old_path = renames
+                    .iter()
+                    .find_map(|(old, new)| (new == path).then_some(old.as_str()))
+                    .unwrap_or(path);
+                let old = git_file_at(&repo, &book.commit, old_path);
+                let new =
+                    fs::read_to_string(repo.join(path)).with_context(|| format!("read {path}"))?;
+                let old_lines = old.as_deref().map(|text| cited_lines(text, *lines));
+                let new_lines = cited_lines(&new, *lines);
+                println!("{name}: {}", render_evidence(item));
+                print_excerpt("before", old_lines.as_deref());
+                print_excerpt("after", Some(&new_lines));
+                if !force && let Some(old_lines) = &old_lines {
+                    let old_nonblank: Vec<_> = old_lines
+                        .iter()
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    let new_trimmed: BTreeSet<_> = new_lines.iter().map(|s| s.trim()).collect();
+                    let matches = old_nonblank
+                        .iter()
+                        .filter(|line| new_trimmed.contains(**line))
+                        .count();
+                    if !old_nonblank.is_empty() && matches * 10 < old_nonblank.len() * 3 {
+                        println!(
+                            "{name}: {} now covers different code; fix the range in the note, then accept again (or pass --force)",
+                            render_evidence(&Evidence {
+                                target: item.target.clone(),
+                                pin: None
+                            })
+                        );
+                        bad = true;
+                    }
+                }
+            }
+            item.pin = pin_for(&repo, &item.target)?;
+            dirty = true;
+        }
+        if bad {
+            refused = true;
+        } else if dirty {
+            write_file(
+                note_path(&book, &note.page, &note.id),
+                render_note(&note).as_bytes(),
+            )?;
+            println!("accepted {name}");
+        }
+    }
+    if !translations.is_empty() {
+        crate::translate::sync(book_dir, &translations)?;
+    }
+    if refused {
+        bail!("some notes were not accepted");
+    }
+    Ok(())
+}
+
+fn git_file_at(repo: &Path, commit: &str, path: &str) -> Option<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["show", &format!("{commit}:{path}")])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+fn cited_lines(text: &str, range: Option<(usize, usize)>) -> Vec<&str> {
+    let lines: Vec<_> = text.lines().collect();
+    match range {
+        Some((a, b)) if a <= lines.len() && b <= lines.len() => lines[a - 1..b].to_vec(),
+        Some(_) => Vec::new(),
+        None => lines,
+    }
+}
+
+fn print_excerpt(label: &str, lines: Option<&[&str]>) {
+    println!("  {label}:");
+    match lines {
+        Some(lines) => {
+            for line in lines.iter().take(12) {
+                println!("    {line}");
+            }
+            if lines.len() > 12 {
+                println!("    ...");
+            }
+        }
+        None => println!("    (unavailable)"),
+    }
+}
+
 /// Updates the pinned commit once every note is current again.
 pub fn rebase(book_dir: &Path) -> Result<()> {
     let mut book = load_book(book_dir)?;
@@ -803,12 +1002,14 @@ pub fn rebase(book_dir: &Path) -> Result<()> {
         print_report(&report);
         bail!("resolve errors before moving the book to the new commit");
     }
+    move_book_commit(&mut book)?;
+    Ok(())
+}
+
+fn move_book_commit(book: &mut Book) -> Result<()> {
     let repo = book.repo_path();
-    // Skip trailing commits that only add Codocia's generated docs or touch
-    // translated files (README and README_CN.md), so the book pins the code
-    // it describes rather than its own output.
     let mut ignore = book.effective_ignore();
-    ignore.extend(crate::translate::paths(&book));
+    ignore.extend(crate::translate::paths(book));
     let mut target = current_commit(&repo)?;
     while let Some(parent) = git_parent(&repo, &target) {
         if code_moved(&repo, &parent, &target, &ignore) {
@@ -816,15 +1017,18 @@ pub fn rebase(book_dir: &Path) -> Result<()> {
         }
         target = parent;
     }
-    book.commit = target;
-    write_file(book.dir.join(BOOK_FILE), render_book(&book).as_bytes())?;
-    println!("book now pinned to {}", short(&book.commit));
+    if book.commit != target {
+        book.commit = target;
+        write_file(book.dir.join(BOOK_FILE), render_book(book).as_bytes())?;
+        println!("book pinned to {}", short(&book.commit));
+    }
     Ok(())
 }
 
 /// Validates the book; with `page`, reports only that page's problems.
 pub fn check(book_dir: &Path, page: Option<&str>) -> Result<()> {
     let book = load_book(book_dir)?;
+    follow_and_report(&book)?;
     let notes = load_notes(&book)?;
     let mut report = check_book(&book, &notes)?;
     if let Some(page) = page {
@@ -843,6 +1047,7 @@ pub fn check(book_dir: &Path, page: Option<&str>) -> Result<()> {
 
 pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
     let book = load_book(book_dir)?;
+    follow_and_report(&book)?;
     let notes = load_notes(&book)?;
     let report = check_book(&book, &notes)?;
     if !report.errors.is_empty() {
@@ -852,6 +1057,7 @@ pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
         }
     }
     let mut book = book;
+    move_book_commit(&mut book)?;
     let repo = book.repo_path().canonicalize()?;
     let out = out.unwrap_or_else(|| {
         if book.dir == repo.join(".codocia") {
@@ -1632,11 +1838,11 @@ pub fn check_book(book: &Book, notes: &[Note]) -> Result<Report> {
                 EvidenceState::Ok => {}
                 EvidenceState::Unpinned => report
                     .errors
-                    .push(format!("{name}: unpinned evidence {shown}; run `codocia pin`")),
+                    .push(format!("{name}: unpinned evidence {shown}; run `codocia check`")),
                 EvidenceState::Missing => match &item.target {
                     EvidenceRef::File { path, .. } if renames.contains_key(path.as_str()) => {
                         report.errors.push(format!(
-                            "{name}: {shown} was renamed to {}; run `codocia pin`",
+                            "{name}: {shown} was renamed to {}; run `codocia check`",
                             renames[path.as_str()]
                         ))
                     }
@@ -1648,10 +1854,10 @@ pub fn check_book(book: &Book, notes: &[Note]) -> Result<Report> {
                     .errors
                     .push(format!("{name}: evidence range is outside the file: {shown}")),
                 EvidenceState::Stale => report.errors.push(format!(
-                    "{name}: code changed under {shown}; review the note, then `codocia pin --force {name}`"
+                    "{name}: code changed under {shown}; review the note, then `codocia accept {name}`"
                 )),
                 EvidenceState::Moved(a, b) => report.warnings.push(format!(
-                    "{name}: {shown} moved to lines {a}-{b}; run `codocia pin`"
+                    "{name}: {shown} moved to lines {a}-{b}; run `codocia check`"
                 )),
                 EvidenceState::BadRef(reason) => {
                     report.errors.push(format!("{name}: {shown}: {reason}"))
@@ -2902,7 +3108,19 @@ mod tests {
             3,
             "{r:?}"
         );
-        crate::translate::sync(&book, &["zh".into(), "README_CN.md".into()]).unwrap();
+        assert!(
+            r.errors
+                .iter()
+                .any(|e| e.contains("`codocia accept zh/overview/loop`")),
+            "{r:?}"
+        );
+        assert!(
+            r.errors
+                .iter()
+                .any(|e| e.contains("`codocia accept README_CN.md`")),
+            "{r:?}"
+        );
+        accept(&book, &["zh".into(), "README_CN.md".into()], false).unwrap();
         let r = errors(&book);
         assert!(r.errors.is_empty() && r.warnings.is_empty(), "{r:?}");
 
@@ -2937,7 +3155,12 @@ mod tests {
             "---\ntitle: 引擎循环\n---\n\n`run` 调用 `step` 和 `stop`。\n",
         )
         .unwrap();
-        crate::translate::sync(&book, &["zh/overview/loop".into(), "README_CN.md".into()]).unwrap();
+        accept(
+            &book,
+            &["zh/overview/loop".into(), "README_CN.md".into()],
+            false,
+        )
+        .unwrap();
         assert!(errors(&book).errors.is_empty());
 
         build(&book, Some(repo.join("docs")), false).unwrap();
@@ -2971,7 +3194,210 @@ mod tests {
     }
 
     #[test]
-    fn pin_follows_renamed_files() {
+    fn check_follows_citations_and_reports_count() {
+        if let Some(book) = std::env::var_os("CODOCIA_FOLLOW_TEST_BOOK") {
+            check(Path::new(&book), None).unwrap();
+            return;
+        }
+        let (repo, book) = fixture();
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        fs::write(
+            repo.join("src/core/engine.rs"),
+            "// header\n\nfn a() {}\nfn run() {\n    step();\n}\nfn z() {}\n",
+        )
+        .unwrap();
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "book::tests::check_follows_citations_and_reports_count",
+                "--nocapture",
+            ])
+            .env("CODOCIA_FOLLOW_TEST_BOOK", &book)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{stdout} {:?}", output.stderr);
+        assert!(stdout.contains("followed 1 moved citation(s)"), "{stdout}");
+        assert!(!stdout.contains("moved to lines"), "{stdout}");
+        let notes = load_notes(&load_book(&book).unwrap()).unwrap();
+        assert!(render_note(&notes[0]).contains("src/core/engine.rs:4-6"));
+    }
+
+    #[test]
+    fn accept_reviews_changed_and_unrelated_ranges() {
+        if let Some(book) = std::env::var_os("CODOCIA_ACCEPT_TEST_BOOK") {
+            assert!(accept(Path::new(&book), &["overview/loop".into()], false).is_err());
+            return;
+        }
+        let (repo, book) = fixture();
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        fs::write(
+            repo.join("src/core/engine.rs"),
+            "fn a() {}\nfn run() {\n    step_twice();\n}\nfn z() {}\n",
+        )
+        .unwrap();
+        assert!(check(&book, None).is_err());
+        let loaded = load_book(&book).unwrap();
+        let report = check_book(&loaded, &load_notes(&loaded).unwrap()).unwrap();
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("review the note, then `codocia accept overview/loop`")),
+            "{report:?}"
+        );
+        accept(&book, &["overview/loop".into()], false).unwrap();
+        check(&book, None).unwrap();
+        fs::write(
+            repo.join("src/core/engine.rs"),
+            "fn a() {}\ncompletely\ndifferent\ncode\nfn z() {}\n",
+        )
+        .unwrap();
+        let before = fs::read(note_path(&loaded, "overview", "loop")).unwrap();
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "book::tests::accept_reviews_changed_and_unrelated_ranges",
+                "--nocapture",
+            ])
+            .env("CODOCIA_ACCEPT_TEST_BOOK", &book)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{stdout} {:?}", output.stderr);
+        assert!(stdout.contains("overview/loop: src/core/engine.rs:2-4 now covers different code; fix the range in the note, then accept again (or pass --force)"), "{stdout}");
+        assert!(
+            stdout.contains("before:") && stdout.contains("after:"),
+            "{stdout}"
+        );
+        assert_eq!(
+            fs::read(note_path(&loaded, "overview", "loop")).unwrap(),
+            before
+        );
+        accept(&book, &["loop".into()], true).unwrap();
+        check(&book, None).unwrap();
+        assert!(accept(&book, &["unknown".into()], true).is_err());
+    }
+
+    #[test]
+    fn build_pins_code_but_skips_book_only_commit() {
+        let (repo, _) = fixture();
+        let book = init_in_repo(&repo);
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        fs::write(repo.join("src/other.rs"), "fn other() {}\n").unwrap();
+        git(&repo, &["add", "src/other.rs"]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "code",
+            ],
+        );
+        let code_commit = current_commit(&repo).unwrap();
+        build(&book, None, false).unwrap();
+        assert_eq!(load_book(&book).unwrap().commit, code_commit);
+        git(&repo, &["add", ".codocia"]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "book",
+            ],
+        );
+        build(&book, None, false).unwrap();
+        assert_eq!(load_book(&book).unwrap().commit, code_commit);
+    }
+
+    #[test]
+    fn check_pins_new_evidence_and_accept_force_does_not_fix_bad_ranges() {
+        let (repo, book) = fixture();
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        let loaded = load_book(&book).unwrap();
+        let path = note_path(&loaded, "overview", "loop");
+        let mut note = load_notes(&loaded).unwrap().remove(0);
+        note.evidence[0].pin = None;
+        fs::write(&path, render_note(&note)).unwrap();
+        check(&book, None).unwrap();
+        assert!(load_notes(&loaded).unwrap()[0].evidence[0].pin.is_some());
+        fs::write(repo.join("src/core/engine.rs"), "short\n").unwrap();
+        assert!(accept(&book, &["loop".into()], true).is_err());
+        assert!(check(&book, None).is_err());
+    }
+
+    #[test]
+    fn forced_build_moves_commit_even_if_check_fails() {
+        let (repo, book) = fixture();
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        let old = load_book(&book).unwrap().commit;
+        fs::write(
+            repo.join("src/core/engine.rs"),
+            "fn a() {}\nfn run() {\n    changed();\n}\nfn z() {}\n",
+        )
+        .unwrap();
+        git(&repo, &["add", "src/core/engine.rs"]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "change",
+            ],
+        );
+        assert!(build(&book, None, false).is_err());
+        assert_eq!(load_book(&book).unwrap().commit, old);
+        build(&book, None, true).unwrap();
+        assert_eq!(
+            load_book(&book).unwrap().commit,
+            current_commit(&repo).unwrap()
+        );
+    }
+
+    #[test]
+    fn check_follows_renamed_files() {
         let (repo, book) = fixture();
         add(
             &book,
@@ -3003,8 +3429,10 @@ mod tests {
             "{:?}",
             report.errors
         );
-        pin(&book, &[]).unwrap();
-        let report = check_book(&loaded, &load_notes(&loaded).unwrap()).unwrap();
+        check(&book, None).unwrap();
+        let notes = load_notes(&loaded).unwrap();
+        assert!(render_note(&notes[0]).contains("src/core/runner.rs:2-4"));
+        let report = check_book(&loaded, &notes).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
     }
 

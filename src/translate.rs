@@ -4,7 +4,7 @@
 //! `check` fails when the source has changed since (the translation drifted)
 //! and warns when code, external links or headings differ between the two.
 //! Codocia never translates; an agent edits the translation, then runs
-//! `codocia sync <target>` to record that it matches the source again.
+//! `codocia accept <target>` to record that it matches the source again.
 //!
 //! Two kinds of pairs:
 //! - book translations, for each language in `langs:`: `<book>/<lang>/book.md`
@@ -234,10 +234,10 @@ fn drift(report: &mut Report, name: &str, recorded: &Option<String>, current: &s
     match recorded {
         Some(pin) if pin == current => {}
         Some(_) => report.errors.push(format!(
-            "{name}: source changed since it was translated; update the translation, then `codocia sync {name}`"
+            "{name}: source changed since it was translated; update the translation, then `codocia accept {name}`"
         )),
         None => report.errors.push(format!(
-            "{name}: never synced; check it matches the source, then `codocia sync {name}`"
+            "{name}: never synced; check it matches the source, then `codocia accept {name}`"
         )),
     }
 }
@@ -433,6 +433,23 @@ fn shown(items: &[String]) -> String {
 /// Records that each target matches its current source. A target is a
 /// language (`zh`: its whole book translation), `zh/book`, `zh/<page>/<id>`,
 /// or a repository file listed in `translations:`.
+pub(crate) fn is_target(book: &Book, notes: &[Note], target: &str) -> Result<bool> {
+    let target = target.trim_end_matches(".md");
+    let (lang, rest) = target.split_once('/').unwrap_or((target, ""));
+    if book.langs.iter().any(|l| l == lang) {
+        return Ok(rest.is_empty()
+            || rest == "book"
+            || notes.iter().any(|n| rest == format!("{}/{}", n.page, n.id)));
+    }
+    for raw in &book.translations {
+        let pair = parse_pair(raw)?;
+        if pair.target.trim_end_matches(".md") == target {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub fn sync(book_dir: &Path, targets: &[String]) -> Result<()> {
     if targets.is_empty() {
         bail!(
