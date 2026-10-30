@@ -102,7 +102,11 @@ codocia build             # out/index.md, out/NN-page.md, out/all.md
 
 ## Several Agents, One Book
 
-Give each agent its own page. Empty pages are warnings, so the book stays
+Give each agent its own page. `check --page` shows only that page's
+problems, so book-level warnings (the whole-book word budget, two pages
+explaining the same code) belong to nobody: when every page is written,
+one agent runs a plain `codocia check` and resolves them before `build`.
+ Empty pages are warnings, so the book stays
 buildable while others write. Use `codocia check --page <slug>` to see only
 your page's problems and `codocia show <slug>` to preview it; `build`
 rewrites the shared `out/` directory. Use `status --area <dir>` to see which
