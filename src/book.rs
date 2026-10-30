@@ -2294,7 +2294,7 @@ pub fn render_site(
             structure_title,
             page_file(book, STRUCTURE_SLUG),
             if book.lang == "zh" {
-                "由 Codocia 从代码生成：功能区、依赖、讲解页"
+                "从代码生成：功能区、依赖、讲解页"
             } else {
                 "generated from the code: areas, dependencies, pages"
             }
