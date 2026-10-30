@@ -43,6 +43,10 @@ pub struct Book {
     pub max_words: usize,
     pub pages: Vec<Page>,
     pub ignore: Vec<String>,
+    /// Languages the book is translated into (`<book>/<lang>/`).
+    pub langs: Vec<String>,
+    /// Translated repository files: `target: source #hash`.
+    pub translations: Vec<String>,
     pub intro: String,
     /// Set by `build` when the output lives inside the repository: the
     /// relative path from the output directory to the repository root, used
@@ -167,6 +171,8 @@ pub fn init(options: &InitOptions) -> Result<()> {
             title: overview.to_string(),
         }],
         ignore: Vec::new(),
+        langs: Vec::new(),
+        translations: Vec::new(),
         intro: String::new(),
         link_base: None,
     };
@@ -592,7 +598,7 @@ fn symbol_warnings(repo: &Path, tracked: &[String], note: &Note) -> Vec<String> 
     warnings
 }
 
-fn code_spans(body: &str) -> Vec<String> {
+pub(crate) fn code_spans(body: &str) -> Vec<String> {
     let mut spans = Vec::new();
     let mut in_fence = false;
     for line in body.lines() {
@@ -822,6 +828,7 @@ pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
             }
         }
     }
+    crate::translate::add_languages(&book, &notes, &map, &mut files, in_repo)?;
     let names: Vec<String> = files.iter().map(|(n, _)| n.clone()).collect();
     prepare_output(&out, &names)?;
     for (name, content) in &files {
@@ -965,7 +972,7 @@ impl Book {
         }
     }
 
-    fn label(&self, en: &'static str) -> &'static str {
+    pub(crate) fn label(&self, en: &'static str) -> &'static str {
         if self.lang != "zh" {
             return en;
         }
@@ -1042,13 +1049,15 @@ pub fn load_book(dir: &Path) -> Result<Book> {
         max_words: number("max_words", 0)?,
         pages,
         ignore: front.list("ignore").iter().map(|g| unquote(g)).collect(),
+        langs: crate::translate::parse_langs(front.list("langs"), front.scalar("lang"))?,
+        translations: front.list("translations").to_vec(),
         intro: body.trim().to_string(),
         link_base: None,
         dir,
     })
 }
 
-fn render_book(book: &Book) -> String {
+pub(crate) fn render_book(book: &Book) -> String {
     let mut out = String::from("---\n");
     out.push_str(&format!("title: {}\n", book.title));
     out.push_str(&format!("repo: {}\n", book.repo));
@@ -1070,6 +1079,14 @@ fn render_book(book: &Book) -> String {
     out.push_str("ignore:\n");
     for glob in &book.ignore {
         out.push_str(&format!("  - {glob}\n"));
+    }
+    for (key, items) in [("langs", &book.langs), ("translations", &book.translations)] {
+        if !items.is_empty() {
+            out.push_str(&format!("{key}:\n"));
+            for item in items {
+                out.push_str(&format!("  - {item}\n"));
+            }
+        }
     }
     out.push_str("---\n\n");
     if !book.intro.is_empty() {
@@ -1173,13 +1190,13 @@ fn note_path(book: &Book, page: &str, id: &str) -> PathBuf {
 // ---------------------------------------------------------------------------
 // Minimal frontmatter: `key: value` scalars and `key:` + `  - item` lists.
 
-struct Front {
+pub(crate) struct Front {
     scalars: BTreeMap<String, String>,
     lists: BTreeMap<String, Vec<String>>,
 }
 
 impl Front {
-    fn parse(text: &str) -> Self {
+    pub(crate) fn parse(text: &str) -> Self {
         let mut scalars = BTreeMap::new();
         let mut lists: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut current: Option<String> = None;
@@ -1209,16 +1226,16 @@ impl Front {
         Self { scalars, lists }
     }
 
-    fn scalar(&self, key: &str) -> Option<&str> {
+    pub(crate) fn scalar(&self, key: &str) -> Option<&str> {
         self.scalars.get(key).map(String::as_str)
     }
 
-    fn list(&self, key: &str) -> &[String] {
+    pub(crate) fn list(&self, key: &str) -> &[String] {
         self.lists.get(key).map(Vec::as_slice).unwrap_or(&[])
     }
 }
 
-fn split_front(content: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_front(content: &str) -> Option<(&str, &str)> {
     let rest = content.strip_prefix("---\n")?;
     if let Some(body) = rest.strip_prefix("---\n") {
         return Some(("", body));
@@ -1230,7 +1247,7 @@ fn split_front(content: &str) -> Option<(&str, &str)> {
     Some((&rest[..end], body))
 }
 
-fn unquote(value: &str) -> String {
+pub(crate) fn unquote(value: &str) -> String {
     let value = value.trim();
     for quote in ['"', '\''] {
         if value.len() >= 2 && value.starts_with(quote) && value.ends_with(quote) {
@@ -1240,7 +1257,7 @@ fn unquote(value: &str) -> String {
     value.to_string()
 }
 
-fn validate_slug(value: &str, what: &str) -> Result<()> {
+pub(crate) fn validate_slug(value: &str, what: &str) -> Result<()> {
     let ok = !value.is_empty()
         && value
             .chars()
@@ -1451,7 +1468,7 @@ fn hash_lines(lines: &[&str]) -> String {
     short_hash(joined.as_bytes())
 }
 
-fn short_hash(bytes: &[u8]) -> String {
+pub(crate) fn short_hash(bytes: &[u8]) -> String {
     stable_hash_hex(bytes)[..12].to_string()
 }
 
@@ -1577,6 +1594,7 @@ pub fn check_book(book: &Book, notes: &[Note]) -> Result<Report> {
             }
         }
     }
+    crate::translate::check(book, notes, &mut report)?;
     Ok(report)
 }
 
@@ -2564,6 +2582,123 @@ mod tests {
             |sha: &str| evidence_state(&repo, &parse_evidence(&format!("commit:{sha}")).unwrap());
         assert_eq!(state(&new), EvidenceState::Ok);
         assert!(matches!(state(&old), EvidenceState::BadRef(_)));
+    }
+
+    #[test]
+    fn translations_track_their_source() {
+        let (repo, book) = fixture();
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "`run` calls `step`.",
+        )
+        .unwrap();
+        let book_md = book.join(BOOK_FILE);
+        let text = fs::read_to_string(&book_md).unwrap();
+        fs::write(
+            &book_md,
+            text.replacen(
+                "---\n\n",
+                "langs:\n  - zh\ntranslations:\n  - README_CN.md: README.md\n---\n\n",
+                1,
+            ),
+        )
+        .unwrap();
+        let errors = |b: &Path| {
+            let bk = load_book(b).unwrap();
+            let notes = load_notes(&bk).unwrap();
+            check_book(&bk, &notes).unwrap()
+        };
+        let r = errors(&book);
+        assert!(
+            r.errors.iter().any(|e| e.starts_with("zh/book: missing")),
+            "{r:?}"
+        );
+        assert!(
+            r.errors
+                .iter()
+                .any(|e| e.starts_with("zh/overview/loop: missing"))
+        );
+        assert!(
+            r.errors
+                .iter()
+                .any(|e| e.starts_with("README_CN.md: missing"))
+        );
+
+        fs::create_dir_all(book.join("zh/overview")).unwrap();
+        fs::write(
+            book.join("zh/book.md"),
+            "---\ntitle: 演示\npages:\n  - overview: 概览\n---\n\n",
+        )
+        .unwrap();
+        fs::write(
+            book.join("zh/overview/loop.md"),
+            "---\ntitle: 引擎循环\n---\n\n`run` 调用 `step`。\n",
+        )
+        .unwrap();
+        fs::write(repo.join("README_CN.md"), "# 演示\n").unwrap();
+        let r = errors(&book);
+        assert_eq!(
+            r.errors
+                .iter()
+                .filter(|e| e.contains("never synced"))
+                .count(),
+            3,
+            "{r:?}"
+        );
+        crate::translate::sync(&book, &["zh".into(), "README_CN.md".into()]).unwrap();
+        let r = errors(&book);
+        assert!(r.errors.is_empty() && r.warnings.is_empty(), "{r:?}");
+
+        // The source moves on: both translations drift, parity notices code.
+        let note = note_path(&load_book(&book).unwrap(), "overview", "loop");
+        let text = fs::read_to_string(&note).unwrap();
+        fs::write(
+            &note,
+            text.replace("`run` calls `step`.", "`run` calls `step` and `stop`."),
+        )
+        .unwrap();
+        fs::write(repo.join("README.md"), "# Demo\n\nMore.\n").unwrap();
+        let r = errors(&book);
+        assert!(
+            r.errors
+                .iter()
+                .any(|e| e.starts_with("zh/overview/loop: source changed")),
+            "{r:?}"
+        );
+        assert!(
+            r.errors
+                .iter()
+                .any(|e| e.starts_with("README_CN.md: source changed"))
+        );
+        assert!(
+            r.warnings.iter().any(|w| w.contains("missing `stop`")),
+            "{r:?}"
+        );
+
+        fs::write(
+            book.join("zh/overview/loop.md"),
+            "---\ntitle: 引擎循环\n---\n\n`run` 调用 `step` 和 `stop`。\n",
+        )
+        .unwrap();
+        crate::translate::sync(&book, &["zh/overview/loop".into(), "README_CN.md".into()]).unwrap();
+        assert!(errors(&book).errors.is_empty());
+
+        build(&book, Some(repo.join("docs")), false).unwrap();
+        let en = fs::read_to_string(repo.join("docs/01-overview.md")).unwrap();
+        let zh = fs::read_to_string(repo.join("docs/zh/01-overview.md")).unwrap();
+        assert!(
+            en.contains("**English** · [中文](zh/01-overview.md)"),
+            "{en}"
+        );
+        assert!(
+            zh.contains("[English](../01-overview.md) · **中文**"),
+            "{zh}"
+        );
+        assert!(zh.contains("# 概览") && zh.contains("## 引擎循环") && zh.contains("来源"));
+        assert!(zh.contains("](../../src/core/engine.rs#L2-L4)"), "{zh}");
+        assert!(repo.join("docs/zh/README.md").is_file());
     }
 
     fn add(book: &Path, id: &str, evidence: &[&str], body: &str) -> Result<()> {

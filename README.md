@@ -49,10 +49,11 @@ codocia build                  # out/index.md, out/NN-page.md, out/all.md
 | `history` | Design-shaping commits by year, release timeline, hot files |
 | `note add/list/rm` | Save (`--replace` keeps omitted fields), list, delete notes |
 | `pin [--force page/id]` | Pin new evidence, follow moved code, accept reviewed changes |
-| `check [--page p]` | Evidence, links, backticked symbols and paths, budgets |
+| `check [--page p]` | Evidence, links, backticked symbols and paths, budgets, translation drift |
 | `map` | Generated structure: areas, own descriptions, hub files, import graph, pages |
 | `show <page>` | Print one rendered page (`structure` for the map) |
-| `build [--out dir]` | Write the Markdown book |
+| `build [--out dir]` | Write the Markdown book, plus `<lang>/` for each translation |
+| `sync <target>` | Record that a translation (`zh`, `zh/page/id`, `README_CN.md`) matches its source |
 | `rebase` | Move the pinned commit to the repository HEAD |
 | `site …` / `serve …` | Render a Markdown directory with Starlight |
 | `drift init/snapshot/check` | Legacy in-repository drift checks (below) |

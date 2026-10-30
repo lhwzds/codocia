@@ -62,6 +62,13 @@ enum Command {
         #[arg(long, default_value = ".")]
         book: PathBuf,
     },
+    /// Record that translations match their current source (see `langs:` and `translations:`).
+    Sync {
+        #[arg(long, default_value = ".")]
+        book: PathBuf,
+        /// A language, `<lang>/book`, `<lang>/<page>/<id>`, or a file from `translations:`.
+        targets: Vec<String>,
+    },
     /// Validate evidence, links, and budgets.
     Check {
         #[arg(long, default_value = ".")]
@@ -305,6 +312,7 @@ fn main() -> Result<()> {
         }) => book::note_rm(&book, &name),
         Some(Command::Pin { book, force }) => book::pin(&book, &force),
         Some(Command::Rebase { book }) => book::rebase(&book),
+        Some(Command::Sync { book, targets }) => codocia::translate::sync(&book, &targets),
         Some(Command::Check { book, page }) => book::check(&book, page.as_deref()),
         Some(Command::History {
             book,

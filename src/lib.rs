@@ -2,6 +2,7 @@
 
 pub mod book;
 pub mod structure;
+pub mod translate;
 
 use anyhow::{Context, Result, bail};
 use std::collections::{BTreeMap, BTreeSet};

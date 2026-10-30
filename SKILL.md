@@ -127,6 +127,26 @@ codocia pin --force page/id
 codocia rebase                # pin the book to the new HEAD once check passes
 ```
 
+## Translations
+
+Write the book in one language, then translate. Codocia never translates; it
+records which source each translation was made from and fails `check` once
+the source moves on.
+
+- Book: list languages in `book.md` (`langs:` then `  - zh`). Translate
+  `<book>/zh/book.md` (frontmatter `title`, `pages:` with `slug: 标题` for
+  every page; the body is the intro) and `<book>/zh/<page>/<id>.md` per note
+  (`title` plus the translated body; evidence stays in the source note).
+- Repository files: list them in `book.md` (`translations:` then
+  `  - README_CN.md: README.md`).
+- After translating, or after re-checking a translation whose source changed,
+  run `codocia sync zh/<page>/<id>` (or `zh`, `zh/book`, `README_CN.md`).
+- `check` errors: missing, never synced, or source changed since. Warnings:
+  inline code, external links, code blocks (comments aside) or heading
+  counts differ. Keep code, commands and identifiers identical; translate the
+  prose and comments only.
+- `build` writes `<out>/zh/` with a language switch under every page title.
+
 ## Legacy Drift Mode
 
 `codocia drift init|snapshot|check` keeps the older in-repository workflow for
