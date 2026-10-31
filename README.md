@@ -53,7 +53,8 @@ your-repo/
   functional area, not one file.
 - **Grounded.** Every note cites `path:start-end`, `commit:<sha>`, `pr:<n>`
   or `issue:<n>`, and file evidence is pinned to a hash of the cited lines.
-- **Maintainable.** When code moves, `check` follows it. When cited code
+- **Maintainable.** When code moves, `check` follows it and rewrites the
+  note's line numbers (commit them with the code change). When cited code
   changes, `check` fails until someone reviews the note with `accept`, which
   shows the lines before and after and refuses a range that now covers
   different code.
@@ -81,6 +82,9 @@ your-repo/
 ## In CI
 
 ```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0          # check verifies the commits notes cite
 - run: cargo install codocia
 - run: codocia check
 ```

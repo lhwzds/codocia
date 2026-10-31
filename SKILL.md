@@ -128,7 +128,8 @@ files under one area are cited.
 When the repository moves:
 
 ```bash
-codocia check                 # follows moved code itself; changed code is an error
+codocia check                 # follows moved code itself (rewrites the line numbers
+                              # in note files: commit them); changed code is an error
 # for each "code changed" error: re-read the code, fix the note, then
 codocia accept page/id        # shows the cited lines before and after
 codocia build                 # moves the book's pinned commit, writes docs/
@@ -141,8 +142,9 @@ When you change a range's length (a function grew or shrank), `accept` has no
 pinned text of that length to compare with; read the new lines, then use
 `--force`.
 
-In CI, run `codocia check`: it exits non-zero when a note or a translation
-fell behind the code.
+In CI, run `codocia check` on a full checkout (`fetch-depth: 0`, since it
+verifies cited commits): it exits non-zero when a note or a translation fell
+behind the code.
 
 ## Translations
 
