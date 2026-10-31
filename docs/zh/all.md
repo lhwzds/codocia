@@ -151,11 +151,11 @@ Tests 工作流在每次推送到 `main` 和每个 pull request 时运行前三�
 
 ### 发布与 npm 包装
 
-推送 `v*` 标签会运行 Release 工作流。它的预检会拒绝以下标签：不是最新的 `origin/main`、没有成功的 Tests 运行，或版本号与 `Cargo.toml` 或 `npm/package.json` 不一致，所以两者要一起升版本。随后它重跑 `cargo fmt --check`、`cargo test`、npm 测试和两个发布演练，构建五个目标（macOS 和 Linux 的 x64 与 arm64，以及 Windows x64），把压缩包和 `checksums.txt` 附到 GitHub release，再发布 crate、npm 包（带 provenance）并更新 Homebrew tap。
+推送 `v*` 标签会运行 Release 工作流。它的预检会拒绝以下标签：不是最新的 `origin/main`、没有成功的 Tests 运行，或版本号与 `Cargo.toml` 或 `npm/package.json` 不一致，所以两者要一起升版本。随后它重跑 `cargo fmt --check`、`cargo test`、npm 测试和两个发布演练，构建五个目标（macOS 和 Linux 的 x64 与 arm64，以及 Windows x64），把压缩包和 `checksums.txt` 附到 GitHub release，再发布 crate 和 npm 包（带 provenance，两者都通过 trusted publishing，不存放 token），并更新 Homebrew tap。
 
 npm 包本身不带二进制。它的 `postinstall` 脚本按平台和包自身的版本下载对应压缩包，用 `checksums.txt` 校验 SHA-256，并安装为 `codocia-bin`；`bin/codocia` 只负责启动这个文件。因此 npm 任务要等 GitHub release 任务完成：没有发布资产，安装就会失败。
 
-<sub>来源: [release.yml:12-94](../../.github/workflows/release.yml#L12-L94) · [release.yml:102-116](../../.github/workflows/release.yml#L102-L116) · [release.yml:148-236](../../.github/workflows/release.yml#L148-L236) · [install.js:138-170](../../npm/scripts/install.js#L138-L170) · [codocia](../../npm/bin/codocia) · +1</sub>
+<sub>来源: [release.yml:12-94](../../.github/workflows/release.yml#L12-L94) · [release.yml:102-116](../../.github/workflows/release.yml#L102-L116) · [release.yml:148-240](../../.github/workflows/release.yml#L148-L240) · [install.js:138-170](../../npm/scripts/install.js#L138-L170) · [codocia](../../npm/bin/codocia) · +1</sub>
 
 <a id="structure"></a>
 
@@ -163,7 +163,7 @@ npm 包本身不带二进制。它的 `postinstall` 脚本按平台和包自身�
 
 本页由 Codocia 根据代码自动生成，每次 build 重新计算：功能区划分、各区自带的说明、区之间的 import 依赖，以及讲解各区的页面。
 
-范围内共 16 个文件，8,074 行；已排除 `Cargo.lock`、`LICENSE`、`.gitignore`、`homebrew-tap-template/**`、`docs/**`、`**/.DS_Store`
+范围内共 16 个文件，8,081 行；已排除 `Cargo.lock`、`LICENSE`、`.gitignore`、`homebrew-tap-template/**`、`docs/**`、`**/.DS_Store`
 
 ### 文件结构
 
@@ -171,7 +171,7 @@ npm 包本身不带二进制。它的 `postinstall` 脚本按平台和包自身�
 
 - （根目录文件） — 370 行，4 个文件。A notebook and compiler that turns what AI agents learn about a codebase into concise, sou…\
   讲解：[参与开发](#contributing) (1)
-- `.github/` — 274 行，2 个文件\
+- `.github/` — 281 行，2 个文件\
   讲解：[参与开发](#contributing) (2)
 - `src/` — 7,075 行，5 个文件。Library API for Codocia.\
   核心文件：`book.rs` `structure.rs` `lib.rs`\
