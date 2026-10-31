@@ -40,7 +40,8 @@ tests and both publish dry runs,
 builds five targets (macOS and Linux on x64 and arm64, Windows x64),
 attaches the archives and `checksums.txt` to a GitHub release, and
 publishes the crate and the npm package (with provenance), both through
-trusted publishing with no stored token, and a Homebrew tap update.
+trusted publishing with no stored token. The Homebrew tap checks for new
+releases itself every six hours and updates its formula.
 
 The npm package carries no binary. Its `postinstall` script downloads the
 archive for the platform and the package's own version, verifies its
@@ -48,4 +49,4 @@ SHA-256 against `checksums.txt`, and installs it as `codocia-bin`;
 `bin/codocia` only spawns that file. That is why the npm job waits for the
 GitHub release job: without the release assets, installs fail.
 
-<sub>Sources: [release.yml:12-94](../.github/workflows/release.yml#L12-L94) · [release.yml:102-116](../.github/workflows/release.yml#L102-L116) · [release.yml:148-240](../.github/workflows/release.yml#L148-L240) · [install.js:138-170](../npm/scripts/install.js#L138-L170) · [codocia](../npm/bin/codocia) · +1</sub>
+<sub>Sources: [release.yml:12-94](../.github/workflows/release.yml#L12-L94) · [release.yml:102-116](../.github/workflows/release.yml#L102-L116) · [release.yml:148-226](../.github/workflows/release.yml#L148-L226) · [install.js:138-170](../npm/scripts/install.js#L138-L170) · [codocia](../npm/bin/codocia) · +1</sub>
