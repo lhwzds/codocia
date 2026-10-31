@@ -23,7 +23,7 @@ ignore:
 langs:
   - zh
 translations:
-  - README_CN.md: README.md #a309abb4be23
+  - README_CN.md: README.md #f0590f319bf4
 ---
 
 Codocia is a notebook and compiler for AI coding agents: the agent reads a

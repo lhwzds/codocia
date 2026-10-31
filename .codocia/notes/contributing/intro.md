@@ -6,7 +6,7 @@ evidence:
   - src/book.rs:3618-3627 #e3d1cb3d2c62
   - src/lib.rs:14-16 #46689c54866c
   - src/main.rs:232-242 #fb72c76bb572
-  - .github/workflows/test.yml #c12345db6290
+  - .github/workflows/test.yml #d14f91274e6f
   - Cargo.toml #12a81cffe5b0
 ---
 
@@ -24,8 +24,9 @@ cargo test
 npm test --prefix npm
 ```
 
-The Tests workflow runs the first three and `cargo publish --dry-run` on
-every push to `main` and every pull request. `SKILL.md` is compiled into
+The Tests workflow runs the first three, `codocia check` on this book (from
+a full checkout, built from source) and `cargo publish --dry-run` on every
+push to `main` and every pull request; a release needs it to pass. `SKILL.md` is compiled into
 the binary with `include_str!`, so editing it changes `codocia skill`
 output and needs a rebuild. Any change to the hash, the frontmatter format
 or the `book.md` keys breaks books already committed in other

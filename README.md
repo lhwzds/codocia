@@ -93,7 +93,8 @@ your-repo/
 
 Codocia documents itself: [docs/](https://github.com/lhwzds/codocia/tree/main/docs) and
 [docs/zh/](https://github.com/lhwzds/codocia/tree/main/docs/zh) are built from this repository's
-[.codocia/](https://github.com/lhwzds/codocia/tree/main/.codocia) book.
+[.codocia/](https://github.com/lhwzds/codocia/tree/main/.codocia) book, and CI
+runs `codocia check` on it.
 
 ## License
 

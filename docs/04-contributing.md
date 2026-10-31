@@ -20,8 +20,9 @@ cargo test
 npm test --prefix npm
 ```
 
-The Tests workflow runs the first three and `cargo publish --dry-run` on
-every push to `main` and every pull request. `SKILL.md` is compiled into
+The Tests workflow runs the first three, `codocia check` on this book (from
+a full checkout, built from source) and `cargo publish --dry-run` on every
+push to `main` and every pull request; a release needs it to pass. `SKILL.md` is compiled into
 the binary with `include_str!`, so editing it changes `codocia skill`
 output and needs a rebuild. Any change to the hash, the frontmatter format
 or the `book.md` keys breaks books already committed in other

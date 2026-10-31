@@ -71,7 +71,8 @@ your-repo/
 ## 示例
 
 Codocia 用自己写自己的文档：[docs/](https://github.com/lhwzds/codocia/tree/main/docs) 和
-[docs/zh/](https://github.com/lhwzds/codocia/tree/main/docs/zh) 由本仓库的 [.codocia/](https://github.com/lhwzds/codocia/tree/main/.codocia) 生成。
+[docs/zh/](https://github.com/lhwzds/codocia/tree/main/docs/zh) 由本仓库的 [.codocia/](https://github.com/lhwzds/codocia/tree/main/.codocia) 生成，
+CI 会对它运行 `codocia check`。
 
 ## 许可证
 
