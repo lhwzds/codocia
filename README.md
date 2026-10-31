@@ -91,9 +91,9 @@ your-repo/
 
 ## Examples
 
-RestLoop's documentation is built with Codocia, in English and Chinese:
-[docs/](https://github.com/lhwzds/restloop/tree/main/docs) and
-[docs/zh/](https://github.com/lhwzds/restloop/tree/main/docs/zh).
+Codocia documents itself: [docs/](https://github.com/lhwzds/codocia/tree/main/docs) and
+[docs/zh/](https://github.com/lhwzds/codocia/tree/main/docs/zh) are built from this repository's
+[.codocia/](https://github.com/lhwzds/codocia/tree/main/.codocia) book.
 
 ## License
 

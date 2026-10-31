@@ -163,13 +163,13 @@ npm 包本身不带二进制。它的 `postinstall` 脚本按平台和包自身�
 
 本页由 Codocia 根据代码自动生成，每次 build 重新计算：功能区划分、各区自带的说明、区之间的 import 依赖，以及讲解各区的页面。
 
-范围内共 16 个文件，8,068 行；已排除 `Cargo.lock`、`LICENSE`、`.gitignore`、`homebrew-tap-template/**`、`docs/**`、`**/.DS_Store`
+范围内共 16 个文件，8,067 行；已排除 `Cargo.lock`、`LICENSE`、`.gitignore`、`homebrew-tap-template/**`、`docs/**`、`**/.DS_Store`
 
 ### 文件结构
 
 **仓库根目录**
 
-- （根目录文件） — 369 行，4 个文件。A notebook and compiler that turns what AI agents learn about a codebase into concise, sou…\
+- （根目录文件） — 368 行，4 个文件。A notebook and compiler that turns what AI agents learn about a codebase into concise, sou…\
   讲解：[参与开发](#contributing) (1)
 - `.github/` — 269 行，2 个文件\
   讲解：[参与开发](#contributing) (2)

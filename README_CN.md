@@ -70,9 +70,8 @@ your-repo/
 
 ## 示例
 
-RestLoop 的文档用 Codocia 构建，有英文和中文版：
-[docs/](https://github.com/lhwzds/restloop/tree/main/docs) 和
-[docs/zh/](https://github.com/lhwzds/restloop/tree/main/docs/zh)。
+Codocia 用自己写自己的文档：[docs/](https://github.com/lhwzds/codocia/tree/main/docs) 和
+[docs/zh/](https://github.com/lhwzds/codocia/tree/main/docs/zh) 由本仓库的 [.codocia/](https://github.com/lhwzds/codocia/tree/main/.codocia) 生成。
 
 ## 许可证
 
