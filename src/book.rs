@@ -1487,16 +1487,18 @@ pub fn load_book(dir: &Path) -> Result<Book> {
 
 pub(crate) fn render_book(book: &Book) -> String {
     let mut out = String::from("---\n");
-    out.push_str(&title_line(&book.title));
-    out.push_str(&scalar_line("repo", &book.repo));
+    // 0.2.0 reads these fields without unquoting, so they are written the
+    // way 0.2.0 wrote them.
+    out.push_str(&plain_line("title", &book.title));
+    out.push_str(&plain_line("repo", &book.repo));
     if let Some(path) = &book.out {
         out.push_str(&scalar_line("out", path));
     }
-    out.push_str(&scalar_line("commit", &book.commit));
+    out.push_str(&plain_line("commit", &book.commit));
     if let Some(remote) = &book.remote {
-        out.push_str(&scalar_line("remote", remote));
+        out.push_str(&plain_line("remote", remote));
     }
-    out.push_str(&scalar_line("lang", &book.lang));
+    out.push_str(&plain_line("lang", &book.lang));
     out.push_str(&format!("max_pages: {}\n", book.max_pages));
     out.push_str(&format!("max_page_words: {}\n", book.max_page_words));
     out.push_str(&format!("max_note_words: {}\n", book.max_note_words));
@@ -1521,8 +1523,9 @@ pub(crate) fn render_book(book: &Book) -> String {
         out.push_str("translations:\n");
         for item in &book.translations {
             // The entry is written as it stands: rewriting it would drop
-            // what the entry says beyond `target: source #pin`.
-            out.push_str(&item_line(item));
+            // what the entry says beyond `target: source #pin`, and 0.2.0
+            // reads the entry without unquoting it.
+            out.push_str(&plain_item(item));
         }
     }
     out.push_str("---\n\n");
@@ -1615,7 +1618,8 @@ fn render_note(note: &Note) -> String {
     }
     out.push_str("evidence:\n");
     for item in &note.evidence {
-        out.push_str(&item_line(&render_evidence(item)));
+        // 0.2.0 reads the evidence entry without unquoting it.
+        out.push_str(&plain_item(&render_evidence(item)));
     }
     out.push_str("---\n\n");
     out.push_str(note.body.trim());
@@ -1856,6 +1860,37 @@ pub(crate) fn split_page_entry(raw: &str) -> (String, String) {
             (slug.trim().to_string(), unquote(title))
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Values codocia 0.2.0 reads without unquoting
+//
+// The frontmatter codocia 0.2.0 reads as plain text, without unquoting:
+//
+// - `title`, `repo`, `commit`, `remote` and `lang` of book.md,
+// - the entries of `translations:`,
+// - the `evidence:` entries of a note,
+// - the `source:` pin of a translation.
+//
+// A quoted value keeps its quotes in the value 0.2.0 sees (`title: '*Demo'`
+// reads as `'*Demo'`, and the pin of `source: '#abc123'` reads as
+// `'#abc123'`), so these values are written the way 0.2.0 wrote them:
+// never quoted.
+
+/// One `key: value` line whose value 0.2.0 reads without unquoting; the
+/// value is written as 0.2.0 wrote it. An empty value is written as a bare
+/// `key:`, which 0.2.0 reads as an empty value too.
+pub(crate) fn plain_line(key: &str, value: &str) -> String {
+    if value.is_empty() {
+        return format!("{key}:\n");
+    }
+    format!("{key}: {value}\n")
+}
+
+/// One `  - value` list item whose value 0.2.0 reads without unquoting; the
+/// item is written as 0.2.0 wrote it.
+pub(crate) fn plain_item(value: &str) -> String {
+    format!("  - {value}\n")
 }
 
 pub(crate) fn validate_slug(value: &str, what: &str) -> Result<()> {
@@ -4908,6 +4943,176 @@ mod tests {
         let written = fs::read_to_string(book.join("zh/book.md")).unwrap();
         assert!(written.contains("- overview: 概览"), "{written}");
         assert!(written.contains("title: 演示"), "{written}");
+    }
+
+    /// A book with `zh` as a second language and a translated book file.
+    fn book_with_translation() -> PathBuf {
+        let (_repo, book) = fixture();
+        let book_md = book.join(BOOK_FILE);
+        let text = fs::read_to_string(&book_md).unwrap();
+        fs::write(
+            &book_md,
+            text.replacen("---\n\n", "langs:\n  - zh\n---\n\n", 1),
+        )
+        .unwrap();
+        fs::create_dir_all(book.join("zh")).unwrap();
+        fs::write(
+            book.join("zh/book.md"),
+            "---\ntitle: 演示\npages:\n  - overview: 概览\n---\n\n译文。\n",
+        )
+        .unwrap();
+        book
+    }
+
+    #[test]
+    fn a_translation_source_is_written_unquoted() {
+        let book = book_with_translation();
+        crate::translate::sync(&book, &["zh/book".into()]).unwrap();
+        let written = fs::read_to_string(book.join("zh/book.md")).unwrap();
+        // 0.2.0 reads the pin without unquoting it.
+        assert!(written.contains("source: #"), "{written}");
+        assert!(!written.contains("source: '#"), "{written}");
+        let pin = crate::translate::source_pin(&book.join("zh/book.md")).unwrap();
+        assert!(
+            pin.is_some_and(|pin| !pin.is_empty() && pin.chars().all(|c| c.is_ascii_hexdigit())),
+            "{written}"
+        );
+        // The pin is the hash of the book, so the book still checks out.
+        let loaded = load_book(&book).unwrap();
+        let report = check_book(&loaded, &load_notes(&loaded).unwrap()).unwrap();
+        assert!(report.errors.is_empty(), "{report:?}");
+    }
+
+    #[test]
+    fn a_quoted_translation_source_still_loads() {
+        let book = book_with_translation();
+        crate::translate::sync(&book, &["zh/book".into()]).unwrap();
+        let written = fs::read_to_string(book.join("zh/book.md")).unwrap();
+        let pin = written
+            .lines()
+            .find_map(|line| line.strip_prefix("source: #"))
+            .expect("a source pin")
+            .to_string();
+        // A book written by 1035638 quotes the pin; it reads the same pin.
+        let quoted = written.replace(&format!("source: #{pin}"), &format!("source: '#{pin}'"));
+        fs::write(book.join("zh/book.md"), &quoted).unwrap();
+        assert_eq!(
+            crate::translate::source_pin(&book.join("zh/book.md"))
+                .unwrap()
+                .as_deref(),
+            Some(pin.as_str())
+        );
+        // The pin still matches the book, so syncing changes nothing.
+        crate::translate::sync(&book, &["zh/book".into()]).unwrap();
+        let again = fs::read_to_string(book.join("zh/book.md")).unwrap();
+        assert_eq!(again, quoted);
+    }
+
+    #[test]
+    fn book_fields_read_raw_by_0_2_0_are_written_unquoted() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.title = "*Star".to_string();
+        loaded.repo = "#repo".to_string();
+        loaded.commit = "!commit".to_string();
+        loaded.remote = Some("@remote".to_string());
+        loaded.lang = "&lang".to_string();
+        let rendered = render_book(&loaded);
+        assert!(rendered.contains("title: *Star\n"), "{rendered}");
+        assert!(rendered.contains("repo: #repo\n"), "{rendered}");
+        assert!(rendered.contains("commit: !commit\n"), "{rendered}");
+        assert!(rendered.contains("remote: @remote\n"), "{rendered}");
+        assert!(rendered.contains("lang: &lang\n"), "{rendered}");
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.title, "*Star");
+        assert_eq!(again.repo, "#repo");
+        assert_eq!(again.commit, "!commit");
+        assert_eq!(again.remote.as_deref(), Some("@remote"));
+        assert_eq!(again.lang, "&lang");
+    }
+
+    #[test]
+    fn a_book_with_quoted_fields_still_loads() {
+        let (_repo, book) = fixture();
+        fs::write(
+            book.join(BOOK_FILE),
+            "---\ntitle: '*Demo'\nrepo: '..'\ncommit: 'abc123'\nremote: '*git@example.com:a/b.git'\nlang: 'en'\nmax_pages: 4\npages:\n  - overview: Overview\nignore:\n---\n\n",
+        )
+        .unwrap();
+        let loaded = load_book(&book).unwrap();
+        assert_eq!(loaded.title, "*Demo");
+        assert_eq!(loaded.repo, "..");
+        assert_eq!(loaded.commit, "abc123");
+        assert_eq!(loaded.remote.as_deref(), Some("*git@example.com:a/b.git"));
+        assert_eq!(loaded.lang, "en");
+    }
+
+    #[test]
+    fn translation_entries_are_never_quoted_as_a_whole() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.translations = vec!["*weird.md: README.md #abc1234".to_string()];
+        let rendered = render_book(&loaded);
+        assert!(
+            rendered.contains("  - *weird.md: README.md #abc1234\n"),
+            "{rendered}"
+        );
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.translations, vec!["*weird.md: README.md #abc1234"]);
+    }
+
+    #[test]
+    fn evidence_entries_are_never_quoted_as_a_whole() {
+        let note = Note {
+            page: "overview".to_string(),
+            id: "loop".to_string(),
+            title: "Loop".to_string(),
+            order: None,
+            evidence: vec![Evidence {
+                target: EvidenceRef::File {
+                    path: "*odd.rs".to_string(),
+                    lines: None,
+                },
+                pin: Some("abc123".to_string()),
+            }],
+            body: "The loop runs.".to_string(),
+        };
+        let rendered = render_note(&note);
+        assert!(rendered.contains("  - *odd.rs #abc123\n"), "{rendered}");
+        let parsed = parse_note("overview", "loop", &rendered).unwrap();
+        assert_eq!(
+            parsed.evidence[0].target,
+            EvidenceRef::File {
+                path: "*odd.rs".to_string(),
+                lines: None,
+            }
+        );
+        assert_eq!(parsed.evidence[0].pin.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn a_note_with_a_quoted_evidence_entry_still_loads() {
+        let (_repo, book) = fixture();
+        let path = book.join("notes/overview/loop.md");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "---\ntitle: Loop\nevidence:\n  - 'src/core/engine.rs:2-4 #abc123'\n---\n\nThe loop runs.\n",
+        )
+        .unwrap();
+        let loaded = load_book(&book).unwrap();
+        let notes = load_notes(&loaded).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(
+            notes[0].evidence[0].target,
+            EvidenceRef::File {
+                path: "src/core/engine.rs".to_string(),
+                lines: Some((2, 4)),
+            }
+        );
+        assert_eq!(notes[0].evidence[0].pin.as_deref(), Some("abc123"));
     }
 
     #[test]

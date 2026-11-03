@@ -13,8 +13,8 @@
 //!   for example `README_CN.md: README.md #…`.
 
 use crate::book::{
-    self, Book, Front, Note, Report, code_spans, page_line, quoted_item, render_book, render_site,
-    scalar_line, short_hash, split_front, split_page_entry, title_line, unquote, validate_slug,
+    self, Book, Front, Note, Report, code_spans, page_line, plain_line, quoted_item, render_book,
+    render_site, short_hash, split_front, split_page_entry, title_line, unquote, validate_slug,
 };
 use crate::structure::StructureMap;
 use crate::write_file;
@@ -88,11 +88,19 @@ fn read_translated(path: &Path) -> Result<Option<Translated>> {
     }))
 }
 
+/// The source pin a translated file records, read the way codocia reads it.
+#[cfg(test)]
+pub(crate) fn source_pin(path: &Path) -> Result<Option<String>> {
+    Ok(read_translated(path)?.and_then(|t| t.source))
+}
+
 fn write_translated(root: &Path, path: &Path, t: &Translated) -> Result<()> {
     let mut out = String::from("---\n");
     out.push_str(&title_line(&t.title));
     if let Some(source) = &t.source {
-        out.push_str(&scalar_line("source", &format!("#{source}")));
+        // 0.2.0 reads the pin without unquoting it, so it is written the
+        // way 0.2.0 wrote it: `source: #<hex>`.
+        out.push_str(&plain_line("source", &format!("#{source}")));
     }
     if !t.pages.is_empty() {
         out.push_str("pages:\n");
