@@ -1751,7 +1751,10 @@ pub(crate) fn split_front(content: &str) -> Option<(&str, &str)> {
     Some((&rest[..end], body))
 }
 
-/// The value inside a fully quoted scalar, or `None` when it is not quoted.
+/// The value inside a fully quoted scalar, or `None` when it is not
+/// quoted. Both quote styles are decoded: a single-quoted scalar doubles
+/// every quote inside it, so `''` is one quote, and a double-quoted scalar
+/// carries no escapes, so what stands between the quotes is the value.
 pub(crate) fn quoted_value(value: &str) -> Option<String> {
     let value = value.trim();
     if value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'') {
@@ -1787,17 +1790,39 @@ pub(crate) fn unquote(value: &str) -> String {
 // YAML-safe values
 
 /// Quotes a value so YAML reads it back as the same plain string. Aliases
-/// (`*glob`), comments (`#`) and the other YAML indicators are not plain
-/// scalars, and GitHub then refuses to render the frontmatter.
+/// (`*glob`), comments (`#`), mappings (`key: value`) and the other YAML
+/// indicators are not plain scalars, and GitHub then refuses to render the
+/// frontmatter.
 ///
-/// Only the leading character decides: `key: value` inside a list item is a
-/// valid YAML mapping and ` #…` is a valid comment, so quoting them would
-/// hide the value from readers that do not unquote list items.
+/// The quote style is the one codocia 0.2.0 reads back unchanged. 0.2.0
+/// strips one pair of matching outer quotes and does not decode `''`, so:
+///
+/// - a value without a `"` and without a `\` is written in double quotes
+///   (`"*it's*"`); 0.2.0 and the current reader both read it back as the
+///   value itself,
+/// - a value with a `"` or a `\`, and without a `'`, is written in single
+///   quotes (`'*a"b*'`, `'Overview: \q'`); 0.2.0 reads it back as the value
+///   itself too, and a single-quoted scalar has no escapes, so a `\` stays
+///   a `\`,
+/// - a value with a `'` as well is written in single quotes with the `'`
+///   doubled (`'it''s a "b"'`); only the current reader reads that back
+///   exactly, 0.2.0 keeps the doubled quote. That is the one form 0.2.0
+///   cannot read back unchanged.
 pub(crate) fn yaml_value(value: &str) -> String {
-    if needs_quotes(value) {
-        format!("'{}'", value.replace('\'', "''"))
+    if !needs_quotes(value) {
+        return value.to_string();
+    }
+    // A double-quoted scalar has YAML escapes, so a `\` in the value would
+    // change it (`\n` is a newline) or make it invalid (`\q`); a
+    // single-quoted scalar carries no escapes.
+    if !value.contains('"') && !value.contains('\\') {
+        format!("\"{value}\"")
+    } else if !value.contains('\'') {
+        format!("'{value}'")
     } else {
-        value.to_string()
+        // The value has a `'` and a `"` or a `\`; the `'` is doubled, and
+        // only the current reader decodes that.
+        format!("'{}'", value.replace('\'', "''"))
     }
 }
 
@@ -1809,10 +1834,16 @@ fn needs_quotes(value: &str) -> bool {
     if value.starts_with("- ") {
         return true;
     }
-    matches!(
+    if matches!(
         value.chars().next(),
         Some(first) if "*&!%@`|>?{}[],#'\"".contains(first)
-    )
+    ) {
+        return true;
+    }
+    // A `: ` inside the value starts a mapping and a ` #` starts a comment,
+    // so YAML reads the value without its tail; a value ending with `:` is
+    // a mapping key, not a scalar. Quoting keeps the whole value.
+    value.contains(": ") || value.contains(" #") || value.ends_with(':')
 }
 
 /// One `key: value` line; an empty value is written as a bare `key:`, which
@@ -4717,7 +4748,7 @@ mod tests {
         let mut loaded = load_book(&book).unwrap();
         loaded.ignore = vec!["**/*.lock".to_string(), "docs/img/**".to_string()];
         let rendered = render_book(&loaded);
-        assert!(rendered.contains("- '**/*.lock'"), "{rendered}");
+        assert!(rendered.contains("- \"**/*.lock\""), "{rendered}");
         assert!(rendered.contains("- docs/img/**"), "{rendered}");
         fs::write(book.join(BOOK_FILE), &rendered).unwrap();
         let again = load_book(&book).unwrap();
@@ -4805,7 +4836,7 @@ mod tests {
         loaded.pages[0].title = "Overview: the 'whole' repo".to_string();
         let rendered = render_book(&loaded);
         assert!(
-            rendered.contains("- overview: Overview: the 'whole' repo"),
+            rendered.contains("- overview: \"Overview: the 'whole' repo\""),
             "{rendered}"
         );
         fs::write(book.join(BOOK_FILE), &rendered).unwrap();
@@ -4815,7 +4846,7 @@ mod tests {
 
         loaded.pages[0].title = "*star".to_string();
         let rendered = render_book(&loaded);
-        assert!(rendered.contains("- overview: '*star'"), "{rendered}");
+        assert!(rendered.contains("- overview: \"*star\""), "{rendered}");
         fs::write(book.join(BOOK_FILE), &rendered).unwrap();
         let again = load_book(&book).unwrap();
         assert_eq!(again.pages[0].slug, "overview");
@@ -5563,5 +5594,278 @@ mod tests {
             Some("https://github.com/a/b")
         );
         assert_eq!(web_url("/local/path"), None);
+    }
+
+    // ------------------------------------------------------------------
+    // Titles codocia 0.2.0 unquotes
+
+    /// The value codocia 0.2.0 reads: it strips one pair of matching outer
+    /// quotes and does not decode `''`.
+    fn unquote_0_2_0(value: &str) -> String {
+        let value = value.trim();
+        for quote in ['"', '\''] {
+            if value.len() >= 2 && value.starts_with(quote) && value.ends_with(quote) {
+                return value[1..value.len() - 1].to_string();
+            }
+        }
+        value.to_string()
+    }
+
+    /// The value of a `key: value` line, as codocia 0.2.0 reads it.
+    fn scalar_0_2_0(line: &str) -> String {
+        let (_, value) = line.split_once(':').expect("a `key: value` line");
+        unquote_0_2_0(value)
+    }
+
+    /// The value of a `key: value` line, as codocia 0.2.0 reads it without
+    /// unquoting.
+    fn raw_scalar_0_2_0(line: &str) -> String {
+        let (_, value) = line.split_once(':').expect("a `key: value` line");
+        value.trim().to_string()
+    }
+
+    /// The title of a `- slug: title` line, as codocia 0.2.0 reads it.
+    fn page_title_0_2_0(line: &str) -> String {
+        let item = line.trim_start().strip_prefix("- ").expect("a list item");
+        let (_, title) = item.split_once(':').expect("a `slug: title` entry");
+        unquote_0_2_0(title)
+    }
+
+    /// The line of a rendered file that holds the title of a page.
+    fn page_line<'a>(text: &'a str, slug: &str) -> &'a str {
+        text.lines()
+            .find(|line| line.trim_start().starts_with(&format!("- {slug}:")))
+            .unwrap_or_else(|| panic!("a page entry for `{slug}` in {text}"))
+    }
+
+    /// The line of a rendered file that holds a title.
+    fn title_line(text: &str) -> &str {
+        text.lines()
+            .find(|line| line.starts_with("title:"))
+            .unwrap_or_else(|| panic!("a title in {text}"))
+    }
+
+    #[test]
+    fn a_note_title_with_a_colon_is_quoted() {
+        let note = note_with_title("Overview: details");
+        let rendered = render_note(&note);
+        assert!(
+            rendered.contains("title: \"Overview: details\"\n"),
+            "{rendered}"
+        );
+        let parsed = parse_note("overview", "loop", &rendered).unwrap();
+        assert_eq!(parsed.title, "Overview: details");
+        assert_eq!(scalar_0_2_0(title_line(&rendered)), "Overview: details");
+    }
+
+    #[test]
+    fn a_note_title_ending_with_a_colon_is_quoted() {
+        let note = note_with_title("Overview:");
+        let rendered = render_note(&note);
+        assert!(rendered.contains("title: \"Overview:\"\n"), "{rendered}");
+        let parsed = parse_note("overview", "loop", &rendered).unwrap();
+        assert_eq!(parsed.title, "Overview:");
+        assert_eq!(scalar_0_2_0(title_line(&rendered)), "Overview:");
+    }
+
+    #[test]
+    fn a_page_title_with_a_hash_is_quoted() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.pages[0].title = "a # b".to_string();
+        let rendered = render_book(&loaded);
+        assert!(rendered.contains("- overview: \"a # b\"\n"), "{rendered}");
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.pages[0].slug, "overview");
+        assert_eq!(again.pages[0].title, "a # b");
+        assert_eq!(page_title_0_2_0(page_line(&rendered, "overview")), "a # b");
+    }
+
+    #[test]
+    fn an_ignore_glob_with_an_apostrophe_is_written_in_double_quotes() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.ignore = vec!["*it's*".to_string()];
+        let rendered = render_book(&loaded);
+        assert!(rendered.contains("- \"*it's*\"\n"), "{rendered}");
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.ignore, vec!["*it's*"]);
+        let line = rendered
+            .lines()
+            .find(|line| line.trim_start().starts_with("- \"*it's*\""))
+            .expect("the ignore glob");
+        let item = line.trim_start().strip_prefix("- ").unwrap();
+        assert_eq!(unquote_0_2_0(item), "*it's*");
+    }
+
+    #[test]
+    fn a_value_with_a_double_quote_is_written_in_single_quotes() {
+        let note = note_with_title("*a\"b");
+        let rendered = render_note(&note);
+        assert!(rendered.contains("title: '*a\"b'\n"), "{rendered}");
+        let parsed = parse_note("overview", "loop", &rendered).unwrap();
+        assert_eq!(parsed.title, "*a\"b");
+        assert_eq!(scalar_0_2_0(title_line(&rendered)), "*a\"b");
+    }
+
+    #[test]
+    fn a_title_with_a_backslash_is_written_in_single_quotes() {
+        let note = note_with_title("Overview: \\q");
+        let rendered = render_note(&note);
+        // A double-quoted scalar has YAML escapes, so `\\q` would be
+        // invalid there; a single-quoted one has none.
+        assert!(rendered.contains("title: 'Overview: \\q'\n"), "{rendered}");
+        // The current reader reads the backslash back.
+        let parsed = parse_note("overview", "loop", &rendered).unwrap();
+        assert_eq!(parsed.title, "Overview: \\q");
+        // 0.2.0 reads it back too.
+        assert_eq!(scalar_0_2_0(title_line(&rendered)), "Overview: \\q");
+    }
+
+    #[test]
+    fn a_title_with_an_escape_sequence_keeps_the_backslash() {
+        let note = note_with_title("Overview: \\n");
+        let rendered = render_note(&note);
+        assert!(rendered.contains("title: 'Overview: \\n'\n"), "{rendered}");
+        // `\\n` stays a backslash and an `n`, it is not a newline.
+        let parsed = parse_note("overview", "loop", &rendered).unwrap();
+        assert_eq!(parsed.title, "Overview: \\n");
+        assert_eq!(scalar_0_2_0(title_line(&rendered)), "Overview: \\n");
+    }
+
+    #[test]
+    fn a_value_with_a_quote_and_a_backslash_doubles_the_single_quote() {
+        let note = note_with_title("*it's \\q");
+        let rendered = render_note(&note);
+        assert!(rendered.contains("title: '*it''s \\q'\n"), "{rendered}");
+        // The current reader decodes the doubled quote and keeps the
+        // backslash.
+        let parsed = parse_note("overview", "loop", &rendered).unwrap();
+        assert_eq!(parsed.title, "*it's \\q");
+        // 0.2.0 does not decode the doubled quote: it keeps it.
+        assert_eq!(scalar_0_2_0(title_line(&rendered)), "*it''s \\q");
+    }
+
+    #[test]
+    fn a_value_with_both_quotes_doubles_the_single_quote() {
+        let note = note_with_title("*it's a \"b\"*");
+        let rendered = render_note(&note);
+        assert!(
+            rendered.contains("title: '*it''s a \"b\"*'\n"),
+            "{rendered}"
+        );
+        // The current reader decodes the doubled quote.
+        let parsed = parse_note("overview", "loop", &rendered).unwrap();
+        assert_eq!(parsed.title, "*it's a \"b\"*");
+        // 0.2.0 does not decode it: it keeps the doubled quote.
+        assert_eq!(scalar_0_2_0(title_line(&rendered)), "*it''s a \"b\"*");
+    }
+
+    #[test]
+    fn a_book_title_with_a_colon_is_written_unquoted() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.title = "Codocia: x".to_string();
+        let rendered = render_book(&loaded);
+        // 0.2.0 reads the book title without unquoting it, so it is written
+        // as it is.
+        assert!(rendered.contains("title: Codocia: x\n"), "{rendered}");
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.title, "Codocia: x");
+        assert_eq!(raw_scalar_0_2_0(title_line(&rendered)), "Codocia: x");
+    }
+
+    #[test]
+    fn a_translated_book_quotes_its_titles() {
+        let (_repo, book) = fixture();
+        let book_md = book.join(BOOK_FILE);
+        let text = fs::read_to_string(&book_md).unwrap();
+        fs::write(
+            &book_md,
+            text.replacen("---\n\n", "langs:\n  - zh\n---\n\n", 1),
+        )
+        .unwrap();
+        fs::create_dir_all(book.join("zh")).unwrap();
+        fs::write(
+            book.join("zh/book.md"),
+            "---\ntitle: 演示: 概览\npages:\n  - overview: 概览: 详情\n---\n\n译文。\n",
+        )
+        .unwrap();
+        crate::translate::sync(&book, &["zh/book".into()]).unwrap();
+        let written = fs::read_to_string(book.join("zh/book.md")).unwrap();
+        assert!(written.contains("title: \"演示: 概览\""), "{written}");
+        assert!(written.contains("- overview: \"概览: 详情\""), "{written}");
+        // The current reader reads both titles back.
+        let (front, _) = split_front(&written).unwrap();
+        let front = Front::parse(front);
+        assert_eq!(
+            front.scalar_value("title").map(|value| unquote(&value)),
+            Some("演示: 概览".to_string())
+        );
+        assert_eq!(
+            front.list("pages"),
+            ["overview: \"概览: 详情\"".to_string()].as_slice()
+        );
+        // 0.2.0 reads both titles back too.
+        assert_eq!(scalar_0_2_0(title_line(&written)), "演示: 概览");
+        assert_eq!(
+            page_title_0_2_0(page_line(&written, "overview")),
+            "概览: 详情"
+        );
+    }
+
+    #[test]
+    fn a_translated_note_title_with_a_colon_is_quoted() {
+        let (_repo, book) = fixture();
+        add(&book, "loop", &["src/core/engine.rs:1-2"], "The loop runs.").unwrap();
+        let book_md = book.join(BOOK_FILE);
+        let text = fs::read_to_string(&book_md).unwrap();
+        fs::write(
+            &book_md,
+            text.replacen("---\n\n", "langs:\n  - zh\n---\n\n", 1),
+        )
+        .unwrap();
+        fs::create_dir_all(book.join("zh/overview")).unwrap();
+        fs::write(
+            book.join("zh/overview/loop.md"),
+            "---\ntitle: 循环: 细节\n---\n\n循环运行。\n",
+        )
+        .unwrap();
+        crate::translate::sync(&book, &["zh/overview/loop".into()]).unwrap();
+        let written = fs::read_to_string(book.join("zh/overview/loop.md")).unwrap();
+        assert!(written.contains("title: \"循环: 细节\""), "{written}");
+        let (front, _) = split_front(&written).unwrap();
+        let front = Front::parse(front);
+        assert_eq!(
+            front.scalar_value("title").map(|value| unquote(&value)),
+            Some("循环: 细节".to_string())
+        );
+        assert_eq!(scalar_0_2_0(title_line(&written)), "循环: 细节");
+    }
+
+    #[test]
+    fn quoted_values_round_trip_through_the_reader() {
+        for value in [
+            "Overview: details",
+            "a # b",
+            "Trailing:",
+            "*it's*",
+            "*a\"b",
+            "*it's a \"b\"*",
+            "'quoted'",
+            "\"quoted\"",
+            "Overview: \\q",
+            "Overview: \\n",
+            "*it's \\q",
+        ] {
+            assert!(needs_quotes(value), "{value}");
+            let written = yaml_value(value);
+            // The reader decodes both quote styles.
+            assert_eq!(unquote(&written), value, "{written}");
+            assert_eq!(quoted_item(&written).as_deref(), Some(value), "{written}");
+        }
     }
 }

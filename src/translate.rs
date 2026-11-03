@@ -96,6 +96,8 @@ pub(crate) fn source_pin(path: &Path) -> Result<Option<String>> {
 
 fn write_translated(root: &Path, path: &Path, t: &Translated) -> Result<()> {
     let mut out = String::from("---\n");
+    // 0.2.0 unquotes the title and the page titles, so they are written in
+    // the quote style it reads back unchanged.
     out.push_str(&title_line(&t.title));
     if let Some(source) = &t.source {
         // 0.2.0 reads the pin without unquoting it, so it is written the
