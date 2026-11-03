@@ -3,10 +3,10 @@ title: Translations that cannot drift silently
 order: 10
 evidence:
   - src/translate.rs:1-13 #930e7bfc223e
-  - src/translate.rs:116-131 #17a5f00bd645
-  - src/translate.rs:174-245 #4e29264b5b2e
-  - src/translate.rs:279-312 #0ec8e1d27595
-  - src/translate.rs:454-512 #af8c404b26b6
+  - src/translate.rs:130-145 #17a5f00bd645
+  - src/translate.rs:188-259 #4e29264b5b2e
+  - src/translate.rs:293-326 #0ec8e1d27595
+  - src/translate.rs:468-526 #af8c404b26b6
   - commit:30f24d2
 ---
 

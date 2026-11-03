@@ -3,10 +3,10 @@ title: What build writes
 order: 20
 evidence:
   - src/book.rs:1169-1238 #1801438d92d5
-  - src/book.rs:1438-1448 #5bf5d1669974
-  - src/book.rs:2663-2759 #aa84cee362b9
-  - src/book.rs:2988-3008 #1932ec5d057c
-  - src/translate.rs:529-579 #2f156a9a4b53
+  - src/book.rs:1432-1442 #5bf5d1669974
+  - src/book.rs:2839-2935 #aa84cee362b9
+  - src/book.rs:3164-3184 #1932ec5d057c
+  - src/translate.rs:543-593 #2f156a9a4b53
   - commit:dad32d4
   - commit:b4cfb0e
   - commit:65bec6a

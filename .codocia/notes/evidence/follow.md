@@ -2,9 +2,9 @@
 title: Following moved code
 order: 10
 evidence:
-  - src/book.rs:1873-1919 #b12f018ae283
+  - src/book.rs:2049-2095 #b12f018ae283
   - src/book.rs:827-867 #ba448c4b446c
-  - src/book.rs:2585-2616 #232917c1a1f3
+  - src/book.rs:2761-2792 #232917c1a1f3
   - commit:8c83c23
   - commit:fa187ba
 ---
