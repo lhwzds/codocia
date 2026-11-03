@@ -1417,11 +1417,8 @@ pub fn load_book(dir: &Path) -> Result<Book> {
     };
     let mut pages = Vec::new();
     for item in front.list("pages") {
-        let (slug, title) = item
-            .split_once(':')
-            .map(|(s, t)| (s.trim(), t.trim()))
-            .unwrap_or((item.trim(), item.trim()));
-        validate_slug(slug, "page slug")?;
+        let (slug, title) = split_page_entry(item);
+        validate_slug(&slug, "page slug")?;
         if slug == STRUCTURE_SLUG {
             bail!(
                 "{BOOK_FILE}: `{STRUCTURE_SLUG}` is reserved for the generated code structure page"
@@ -1430,10 +1427,7 @@ pub fn load_book(dir: &Path) -> Result<Book> {
         if pages.iter().any(|p: &Page| p.slug == slug) {
             bail!("{BOOK_FILE}: duplicate page `{slug}`");
         }
-        pages.push(Page {
-            slug: slug.to_string(),
-            title: unquote(title),
-        });
+        pages.push(Page { slug, title });
     }
     let out = front.scalar("out").map(unquote);
     if let Some(ref value) = out {
@@ -1446,27 +1440,45 @@ pub fn load_book(dir: &Path) -> Result<Book> {
             bail!("{BOOK_FILE}: `out` must be a repository-relative path without `..`");
         }
     }
+    // The primary language is read back the way it is written, so `langs`
+    // cannot slip past the check by quoting it.
+    let lang = front
+        .scalar("lang")
+        .map(unquote)
+        .unwrap_or_else(|| "en".to_string());
+    let langs = crate::translate::parse_langs(front.list("langs"), Some(&lang))?;
     Ok(Book {
         out,
-        title: front.scalar("title").unwrap_or("Documentation").to_string(),
+        title: front
+            .scalar_value("title")
+            .map(|value| unquote(&value))
+            .unwrap_or_else(|| "Documentation".to_string()),
         repo: front
             .scalar("repo")
-            .with_context(|| format!("{BOOK_FILE}: `repo` is required"))?
-            .to_string(),
-        commit: front.scalar("commit").unwrap_or("").to_string(),
+            .map(unquote)
+            .with_context(|| format!("{BOOK_FILE}: `repo` is required"))?,
+        commit: front.scalar("commit").map(unquote).unwrap_or_default(),
         remote: front
             .scalar("remote")
-            .map(str::to_string)
+            .map(unquote)
             .filter(|r| !r.is_empty()),
-        lang: front.scalar("lang").unwrap_or("en").to_string(),
+        lang,
         max_pages: number("max_pages", 8)?,
         max_page_words: number("max_page_words", 900)?,
         max_note_words: number("max_note_words", 180)?,
         max_words: number("max_words", 0)?,
         pages,
-        ignore: front.list("ignore").iter().map(|g| unquote(g)).collect(),
-        langs: crate::translate::parse_langs(front.list("langs"), front.scalar("lang"))?,
-        translations: front.list("translations").to_vec(),
+        ignore: front
+            .list("ignore")
+            .iter()
+            .map(|raw| quoted_item(raw).unwrap_or_else(|| raw.trim().to_string()))
+            .collect(),
+        langs,
+        translations: front
+            .list("translations")
+            .iter()
+            .map(|raw| quoted_item(raw).unwrap_or_else(|| raw.trim().to_string()))
+            .collect(),
         intro: body.trim().to_string(),
         link_base: None,
         dir,
@@ -1475,16 +1487,16 @@ pub fn load_book(dir: &Path) -> Result<Book> {
 
 pub(crate) fn render_book(book: &Book) -> String {
     let mut out = String::from("---\n");
-    out.push_str(&format!("title: {}\n", book.title));
-    out.push_str(&format!("repo: {}\n", book.repo));
+    out.push_str(&title_line(&book.title));
+    out.push_str(&scalar_line("repo", &book.repo));
     if let Some(path) = &book.out {
-        out.push_str(&format!("out: {path}\n"));
+        out.push_str(&scalar_line("out", path));
     }
-    out.push_str(&format!("commit: {}\n", book.commit));
+    out.push_str(&scalar_line("commit", &book.commit));
     if let Some(remote) = &book.remote {
-        out.push_str(&format!("remote: {remote}\n"));
+        out.push_str(&scalar_line("remote", remote));
     }
-    out.push_str(&format!("lang: {}\n", book.lang));
+    out.push_str(&scalar_line("lang", &book.lang));
     out.push_str(&format!("max_pages: {}\n", book.max_pages));
     out.push_str(&format!("max_page_words: {}\n", book.max_page_words));
     out.push_str(&format!("max_note_words: {}\n", book.max_note_words));
@@ -1493,18 +1505,24 @@ pub(crate) fn render_book(book: &Book) -> String {
     }
     out.push_str("pages:\n");
     for page in &book.pages {
-        out.push_str(&format!("  - {}: {}\n", page.slug, page.title));
+        out.push_str(&page_line(&page.slug, &page.title));
     }
     out.push_str("ignore:\n");
     for glob in &book.ignore {
-        out.push_str(&format!("  - {glob}\n"));
+        out.push_str(&item_line(glob));
     }
-    for (key, items) in [("langs", &book.langs), ("translations", &book.translations)] {
-        if !items.is_empty() {
-            out.push_str(&format!("{key}:\n"));
-            for item in items {
-                out.push_str(&format!("  - {item}\n"));
-            }
+    if !book.langs.is_empty() {
+        out.push_str("langs:\n");
+        for lang in &book.langs {
+            out.push_str(&item_line(lang));
+        }
+    }
+    if !book.translations.is_empty() {
+        out.push_str("translations:\n");
+        for item in &book.translations {
+            // The entry is written as it stands: rewriting it would drop
+            // what the entry says beyond `target: source #pin`.
+            out.push_str(&item_line(item));
         }
     }
     out.push_str("---\n\n");
@@ -1574,12 +1592,15 @@ fn parse_note(page: &str, id: &str, content: &str) -> Result<Note> {
     let evidence = front
         .list("evidence")
         .iter()
-        .map(|raw| parse_evidence(raw))
+        .map(|raw| parse_evidence(&quoted_item(raw).unwrap_or_else(|| raw.trim().to_string())))
         .collect::<Result<Vec<_>>>()?;
     Ok(Note {
         page: page.to_string(),
         id: id.to_string(),
-        title: unquote(front.scalar("title").unwrap_or("")),
+        title: front
+            .scalar_value("title")
+            .map(|value| unquote(&value))
+            .unwrap_or_default(),
         order,
         evidence,
         body: body.trim().to_string(),
@@ -1588,13 +1609,13 @@ fn parse_note(page: &str, id: &str, content: &str) -> Result<Note> {
 
 fn render_note(note: &Note) -> String {
     let mut out = String::from("---\n");
-    out.push_str(&format!("title: {}\n", note.title));
+    out.push_str(&title_line(&note.title));
     if let Some(order) = note.order {
         out.push_str(&format!("order: {order}\n"));
     }
     out.push_str("evidence:\n");
     for item in &note.evidence {
-        out.push_str(&format!("  - {}\n", render_evidence(item)));
+        out.push_str(&item_line(&render_evidence(item)));
     }
     out.push_str("---\n\n");
     out.push_str(note.body.trim());
@@ -1653,12 +1674,15 @@ fn note_path(book: &Book, page: &str, id: &str) -> PathBuf {
 pub(crate) struct Front {
     scalars: BTreeMap<String, String>,
     lists: BTreeMap<String, Vec<String>>,
+    /// Keys written with an empty value (`key:`), which YAML reads as null.
+    empties: BTreeSet<String>,
 }
 
 impl Front {
     pub(crate) fn parse(text: &str) -> Self {
         let mut scalars = BTreeMap::new();
         let mut lists: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut empties = BTreeSet::new();
         let mut current: Option<String> = None;
         for line in text.lines() {
             if line.trim().is_empty() || line.trim_start().starts_with('#') {
@@ -1676,18 +1700,34 @@ impl Front {
                 let value = value.trim();
                 if value.is_empty() {
                     lists.entry(key.clone()).or_default();
+                    empties.insert(key.clone());
                     current = Some(key);
                 } else {
-                    scalars.insert(key, value.to_string());
+                    scalars.insert(key.clone(), value.to_string());
+                    empties.remove(&key);
                     current = None;
                 }
             }
         }
-        Self { scalars, lists }
+        Self {
+            scalars,
+            lists,
+            empties,
+        }
     }
 
     pub(crate) fn scalar(&self, key: &str) -> Option<&str> {
         self.scalars.get(key).map(String::as_str)
+    }
+
+    /// The value of `key`; a key written with an empty value (`key:`) reads
+    /// back as an empty string, a missing key as `None`.
+    pub(crate) fn scalar_value(&self, key: &str) -> Option<String> {
+        match self.scalars.get(key) {
+            Some(value) => Some(value.clone()),
+            None if self.empties.contains(key) => Some(String::new()),
+            None => None,
+        }
     }
 
     pub(crate) fn list(&self, key: &str) -> &[String] {
@@ -1707,14 +1747,115 @@ pub(crate) fn split_front(content: &str) -> Option<(&str, &str)> {
     Some((&rest[..end], body))
 }
 
-pub(crate) fn unquote(value: &str) -> String {
+/// The value inside a fully quoted scalar, or `None` when it is not quoted.
+pub(crate) fn quoted_value(value: &str) -> Option<String> {
     let value = value.trim();
-    for quote in ['"', '\''] {
-        if value.len() >= 2 && value.starts_with(quote) && value.ends_with(quote) {
-            return value[1..value.len() - 1].to_string();
+    if value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'') {
+        // A doubled quote inside a quoted value is one quote.
+        return Some(value[1..value.len() - 1].replace("''", "'"));
+    }
+    if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
+        return Some(value[1..value.len() - 1].to_string());
+    }
+    None
+}
+
+/// The value inside a fully quoted scalar, when the whole value is one
+/// quoted YAML scalar. A single-quoted scalar doubles every quote inside it,
+/// so `'a': 'b'` is two quoted parts and not one quoted entry.
+pub(crate) fn quoted_item(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'') {
+        let inner = &value[1..value.len() - 1];
+        if inner.replace("''", "").contains('\'') {
+            return None;
+        }
+        return Some(inner.replace("''", "'"));
+    }
+    quoted_value(value)
+}
+
+pub(crate) fn unquote(value: &str) -> String {
+    quoted_value(value).unwrap_or_else(|| value.trim().to_string())
+}
+
+// ---------------------------------------------------------------------------
+// YAML-safe values
+
+/// Quotes a value so YAML reads it back as the same plain string. Aliases
+/// (`*glob`), comments (`#`) and the other YAML indicators are not plain
+/// scalars, and GitHub then refuses to render the frontmatter.
+///
+/// Only the leading character decides: `key: value` inside a list item is a
+/// valid YAML mapping and ` #…` is a valid comment, so quoting them would
+/// hide the value from readers that do not unquote list items.
+pub(crate) fn yaml_value(value: &str) -> String {
+    if needs_quotes(value) {
+        format!("'{}'", value.replace('\'', "''"))
+    } else {
+        value.to_string()
+    }
+}
+
+/// Whether a value has to be quoted to stay a plain YAML scalar.
+fn needs_quotes(value: &str) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    if value.starts_with("- ") {
+        return true;
+    }
+    matches!(
+        value.chars().next(),
+        Some(first) if "*&!%@`|>?{}[],#'\"".contains(first)
+    )
+}
+
+/// One `key: value` line; an empty value is written as a bare `key:`, which
+/// reads back as the empty string it was.
+pub(crate) fn scalar_line(key: &str, value: &str) -> String {
+    if value.is_empty() {
+        return format!("{key}:\n");
+    }
+    format!("{key}: {}\n", yaml_value(value))
+}
+
+/// One `title: value` line; an empty title is written as a bare `title:`.
+pub(crate) fn title_line(value: &str) -> String {
+    if value.is_empty() {
+        return "title:\n".to_string();
+    }
+    format!("title: {}\n", yaml_value(value))
+}
+
+/// One `  - value` list item; the whole item is one scalar, so it is quoted
+/// as a whole when YAML needs it.
+pub(crate) fn item_line(value: &str) -> String {
+    format!("  - {}\n", yaml_value(value))
+}
+
+/// One `  - slug: title` page entry. The slug is validated, so only the
+/// title can need quotes; the entry itself is never quoted as a whole.
+pub(crate) fn page_line(slug: &str, title: &str) -> String {
+    format!("  - {slug}: {}\n", yaml_value(title))
+}
+
+/// Splits a `slug: title` page entry. Books written before the quoting fix
+/// quote the whole entry as one scalar; the current format quotes only the
+/// title.
+pub(crate) fn split_page_entry(raw: &str) -> (String, String) {
+    match quoted_item(raw) {
+        Some(entry) => {
+            let (slug, title) = entry
+                .split_once(':')
+                .unwrap_or((entry.as_str(), entry.as_str()));
+            (slug.trim().to_string(), title.trim().to_string())
+        }
+        None => {
+            let (slug, title) = raw.split_once(':').unwrap_or((raw, raw));
+            (slug.trim().to_string(), unquote(title))
         }
     }
-    value.to_string()
 }
 
 pub(crate) fn validate_slug(value: &str, what: &str) -> Result<()> {
@@ -4515,6 +4656,258 @@ mod tests {
         fs::write(&path, text).unwrap();
         let loaded = load_book(&book).unwrap();
         assert_eq!(loaded.ignore, vec!["src/**", "README.md"]);
+    }
+
+    /// A note with the given title and one pinned piece of evidence.
+    fn note_with_title(title: &str) -> Note {
+        Note {
+            page: "overview".to_string(),
+            id: "loop".to_string(),
+            title: title.to_string(),
+            order: None,
+            evidence: vec![Evidence {
+                target: EvidenceRef::File {
+                    path: "src/core/engine.rs".to_string(),
+                    lines: Some((1, 2)),
+                },
+                pin: Some("abc123".to_string()),
+            }],
+            body: "The loop runs.".to_string(),
+        }
+    }
+
+    #[test]
+    fn ignore_globs_are_quoted_when_yaml_needs_it() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.ignore = vec!["**/*.lock".to_string(), "docs/img/**".to_string()];
+        let rendered = render_book(&loaded);
+        assert!(rendered.contains("- '**/*.lock'"), "{rendered}");
+        assert!(rendered.contains("- docs/img/**"), "{rendered}");
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.ignore, vec!["**/*.lock", "docs/img/**"]);
+    }
+
+    #[test]
+    fn an_empty_note_title_has_no_trailing_space() {
+        let note = note_with_title("");
+        let rendered = render_note(&note);
+        assert!(rendered.contains("title:\n"), "{rendered}");
+        assert!(!rendered.contains("title: \n"), "{rendered}");
+        let parsed = parse_note("overview", "loop", &rendered).unwrap();
+        assert_eq!(parsed.title, "");
+    }
+
+    #[test]
+    fn values_with_single_quotes_round_trip() {
+        for title in ["it's here", "'quoted'", "a 'b' c", "'''"] {
+            let note = note_with_title(title);
+            let rendered = render_note(&note);
+            let parsed = parse_note("overview", "loop", &rendered).unwrap();
+            assert_eq!(parsed.title, title, "{rendered}");
+            assert_eq!(
+                parsed.evidence[0].pin.as_deref(),
+                Some("abc123"),
+                "{rendered}"
+            );
+        }
+        let rendered = render_note(&note_with_title("it's here"));
+        assert!(rendered.contains("title: it's here\n"), "{rendered}");
+    }
+
+    #[test]
+    fn evidence_is_written_unquoted() {
+        let note = Note {
+            page: "overview".to_string(),
+            id: "loop".to_string(),
+            title: "Loop".to_string(),
+            order: None,
+            evidence: vec![Evidence {
+                target: EvidenceRef::File {
+                    path: "src/a.rs".to_string(),
+                    lines: Some((1, 2)),
+                },
+                pin: Some("abc123".to_string()),
+            }],
+            body: "The loop runs.".to_string(),
+        };
+        let rendered = render_note(&note);
+        assert!(
+            rendered.contains("  - src/a.rs:1-2 #abc123\n"),
+            "{rendered}"
+        );
+        let parsed = parse_note("overview", "loop", &rendered).unwrap();
+        assert_eq!(
+            parsed.evidence[0].target,
+            EvidenceRef::File {
+                path: "src/a.rs".to_string(),
+                lines: Some((1, 2)),
+            }
+        );
+        assert_eq!(parsed.evidence[0].pin.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn book_values_with_yaml_characters_round_trip() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.title = "Codocia: a 'notebook'".to_string();
+        loaded.pages[0].title = "Overview: the 'whole' repo".to_string();
+        loaded.ignore = vec!["**/*.lock".to_string(), "weird 'name'".to_string()];
+        let rendered = render_book(&loaded);
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.title, "Codocia: a 'notebook'");
+        assert_eq!(again.pages[0].title, "Overview: the 'whole' repo");
+        assert_eq!(again.ignore, vec!["**/*.lock", "weird 'name'"]);
+    }
+
+    #[test]
+    fn page_entries_quote_only_the_title() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.pages[0].title = "Overview: the 'whole' repo".to_string();
+        let rendered = render_book(&loaded);
+        assert!(
+            rendered.contains("- overview: Overview: the 'whole' repo"),
+            "{rendered}"
+        );
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.pages[0].slug, "overview");
+        assert_eq!(again.pages[0].title, "Overview: the 'whole' repo");
+
+        loaded.pages[0].title = "*star".to_string();
+        let rendered = render_book(&loaded);
+        assert!(rendered.contains("- overview: '*star'"), "{rendered}");
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.pages[0].slug, "overview");
+        assert_eq!(again.pages[0].title, "*star");
+    }
+
+    #[test]
+    fn translation_entries_are_written_unquoted() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.translations = vec!["README_CN.md: README.md #abc1234".to_string()];
+        let rendered = render_book(&loaded);
+        assert!(
+            rendered.contains("- README_CN.md: README.md #abc1234"),
+            "{rendered}"
+        );
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.translations, vec!["README_CN.md: README.md #abc1234"]);
+    }
+
+    #[test]
+    fn translation_entries_keep_their_original_text() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.translations = vec![
+            "README_CN.md: README.md #abc1234 and more".to_string(),
+            "docs/zh.md:  docs/README.md  #def5678".to_string(),
+        ];
+        let rendered = render_book(&loaded);
+        assert!(
+            rendered.contains("- README_CN.md: README.md #abc1234 and more"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("- docs/zh.md:  docs/README.md  #def5678"),
+            "{rendered}"
+        );
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(
+            again.translations,
+            vec![
+                "README_CN.md: README.md #abc1234 and more".to_string(),
+                "docs/zh.md:  docs/README.md  #def5678".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn langs_cannot_repeat_the_primary_language() {
+        for lang_line in ["lang: en\n", "lang: 'en'\n", "lang: \"en\"\n"] {
+            let (_repo, book) = fixture();
+            let path = book.join(BOOK_FILE);
+            let text = fs::read_to_string(&path).unwrap();
+            let text = text.replace("lang: en\n", &format!("{lang_line}langs:\n  - en\n"));
+            assert!(text.contains("langs:"), "{text}");
+            fs::write(&path, text).unwrap();
+            let error = load_book(&book).unwrap_err();
+            assert!(error.to_string().contains("cannot list `en`"), "{error}");
+        }
+    }
+
+    #[test]
+    fn empty_scalars_are_written_without_a_value() {
+        let (_repo, book) = fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.title = String::new();
+        loaded.commit = String::new();
+        loaded.out = Some(String::new());
+        let rendered = render_book(&loaded);
+        assert!(rendered.contains("title:\n"), "{rendered}");
+        assert!(rendered.contains("commit:\n"), "{rendered}");
+        assert!(rendered.contains("out:\n"), "{rendered}");
+        assert!(!rendered.contains("commit: \n"), "{rendered}");
+        assert!(!rendered.contains("out: \n"), "{rendered}");
+        fs::write(book.join(BOOK_FILE), &rendered).unwrap();
+        let again = load_book(&book).unwrap();
+        assert_eq!(again.title, "");
+        assert_eq!(again.commit, "");
+        // An empty `out` reads back as no output at all, the way 0.2.0 reads
+        // it: the default output directory is used instead.
+        assert_eq!(again.out, None);
+    }
+
+    #[test]
+    fn books_written_with_quoted_entries_still_load() {
+        let (_repo, book) = fixture();
+        let original = fs::read_to_string(book.join(BOOK_FILE)).unwrap();
+        let quoted = original
+            .replace("  - overview: Overview", "  - 'overview: Overview'")
+            .replace(
+                "ignore:\n",
+                "ignore:\n  - '**/*.lock'\ntranslations:\n  - 'README_CN.md: README.md #abc1234'\n",
+            );
+        assert_ne!(quoted, original);
+        fs::write(book.join(BOOK_FILE), &quoted).unwrap();
+        let loaded = load_book(&book).unwrap();
+        assert_eq!(loaded.pages[0].slug, "overview");
+        assert_eq!(loaded.pages[0].title, "Overview");
+        assert_eq!(loaded.ignore, vec!["**/*.lock"]);
+        assert_eq!(
+            loaded.translations,
+            vec!["README_CN.md: README.md #abc1234".to_string()]
+        );
+    }
+
+    #[test]
+    fn translated_book_pages_quote_only_the_title() {
+        let (_repo, book) = fixture();
+        let book_md = book.join(BOOK_FILE);
+        let text = fs::read_to_string(&book_md).unwrap();
+        fs::write(
+            &book_md,
+            text.replacen("---\n\n", "langs:\n  - zh\n---\n\n", 1),
+        )
+        .unwrap();
+        fs::create_dir_all(book.join("zh")).unwrap();
+        fs::write(
+            book.join("zh/book.md"),
+            "---\ntitle: 演示\npages:\n  - 'overview: 概览'\n---\n\n译文。\n",
+        )
+        .unwrap();
+        crate::translate::sync(&book, &["zh/book".into()]).unwrap();
+        let written = fs::read_to_string(book.join("zh/book.md")).unwrap();
+        assert!(written.contains("- overview: 概览"), "{written}");
+        assert!(written.contains("title: 演示"), "{written}");
     }
 
     #[test]

@@ -13,8 +13,8 @@
 //!   for example `README_CN.md: README.md #…`.
 
 use crate::book::{
-    self, Book, Front, Note, Report, code_spans, render_book, render_site, short_hash, split_front,
-    unquote, validate_slug,
+    self, Book, Front, Note, Report, code_spans, page_line, quoted_item, render_book, render_site,
+    scalar_line, short_hash, split_front, split_page_entry, title_line, unquote, validate_slug,
 };
 use crate::structure::StructureMap;
 use crate::write_file;
@@ -26,10 +26,12 @@ use std::path::{Path, PathBuf};
 const RESERVED: &[&str] = &["notes", "out"];
 
 pub(crate) fn parse_langs(items: &[String], primary: Option<&str>) -> Result<Vec<String>> {
-    let primary = primary.unwrap_or("en");
+    // The primary language is compared with the translated ones, so it is
+    // read back the way it is written.
+    let primary = primary.map(unquote).unwrap_or_else(|| "en".to_string());
     let mut langs = Vec::new();
     for item in items {
-        let lang = unquote(item);
+        let lang = quoted_item(item).unwrap_or_else(|| item.trim().to_string());
         validate_slug(&lang, "language")?;
         if lang == primary || RESERVED.contains(&lang.as_str()) || langs.contains(&lang) {
             bail!("book.md: `langs` cannot list `{lang}`");
@@ -70,28 +72,32 @@ fn read_translated(path: &Path) -> Result<Option<Translated>> {
     let pages = front
         .list("pages")
         .iter()
-        .filter_map(|item| item.split_once(':'))
-        .map(|(slug, title)| (slug.trim().to_string(), unquote(title)))
+        .filter(|item| item.contains(':'))
+        .map(|item| split_page_entry(item))
         .collect();
     Ok(Some(Translated {
-        title: unquote(front.scalar("title").unwrap_or("")),
+        title: front
+            .scalar_value("title")
+            .map(|value| unquote(&value))
+            .unwrap_or_default(),
         source: front
             .scalar("source")
-            .map(|s| s.trim_start_matches('#').to_string()),
+            .map(|s| unquote(s).trim_start_matches('#').to_string()),
         pages,
         body: body.trim().to_string(),
     }))
 }
 
 fn write_translated(root: &Path, path: &Path, t: &Translated) -> Result<()> {
-    let mut out = format!("---\ntitle: {}\n", t.title);
+    let mut out = String::from("---\n");
+    out.push_str(&title_line(&t.title));
     if let Some(source) = &t.source {
-        out.push_str(&format!("source: #{source}\n"));
+        out.push_str(&scalar_line("source", &format!("#{source}")));
     }
     if !t.pages.is_empty() {
         out.push_str("pages:\n");
         for (slug, title) in &t.pages {
-            out.push_str(&format!("  - {slug}: {title}\n"));
+            out.push_str(&page_line(slug, title));
         }
     }
     out.push_str("---\n\n");
