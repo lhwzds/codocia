@@ -65,7 +65,7 @@ Budgets scale with the code: under 20k lines `init` writes 4 pages and
 one and two CJK characters as one, and skips fenced code, so a Mermaid
 diagram is free. Over-budget pages and notes are warnings, never errors.
 
-<sub>Sources: [book.rs:255-264](../src/book.rs#L255-L264) · [book.rs:2218-2244](../src/book.rs#L2218-L2244) · [book.rs:2297-2319](../src/book.rs#L2297-L2319) · [book.rs:2127-2148](../src/book.rs#L2127-L2148) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
+<sub>Sources: [book.rs:255-264](../src/book.rs#L255-L264) · [book.rs:2425-2451](../src/book.rs#L2425-L2451) · [book.rs:2504-2526](../src/book.rs#L2504-L2526) · [book.rs:2334-2355](../src/book.rs#L2334-L2355) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
 
 ## Saving a note
 

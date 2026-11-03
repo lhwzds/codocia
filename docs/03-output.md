@@ -25,7 +25,7 @@ dependencies between areas.
 JS/TS, Go, C-family includes) to files in the repository; anything external is
 dropped. A language without a resolver simply has no edges.
 
-<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2320-2326](../src/book.rs#L2320-L2326) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2527-2533](../src/book.rs#L2527-L2533) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ## Translations that cannot drift silently
 
@@ -45,7 +45,7 @@ differ, because those must be identical in every language. `accept zh`
 current source hash, refusing a symlinked or escaping file; it does not
 judge the prose.
 
-<sub>Sources: [translate.rs:1-13](../src/translate.rs#L1-L13) · [translate.rs:116-131](../src/translate.rs#L116-L131) · [translate.rs:174-245](../src/translate.rs#L174-L245) · [translate.rs:279-312](../src/translate.rs#L279-L312) · [translate.rs:454-512](../src/translate.rs#L454-L512) · +1</sub>
+<sub>Sources: [translate.rs:1-13](../src/translate.rs#L1-L13) · [translate.rs:132-147](../src/translate.rs#L132-L147) · [translate.rs:190-261](../src/translate.rs#L190-L261) · [translate.rs:295-328](../src/translate.rs#L295-L328) · [translate.rs:470-528](../src/translate.rs#L470-L528) · +1</sub>
 
 ## What build writes
 
@@ -68,7 +68,7 @@ marker first (no symlinks, nothing outside, a non-manifest marker stops the
 build), then deletes only listed files and refuses to overwrite any other
 file, so hand-written pages can share `docs/` with the book.
 
-<sub>Sources: [book.rs:1169-1238](../src/book.rs#L1169-L1238) · [book.rs:1438-1448](../src/book.rs#L1438-L1448) · [book.rs:2663-2759](../src/book.rs#L2663-L2759) · [book.rs:2988-3008](../src/book.rs#L2988-L3008) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
+<sub>Sources: [book.rs:1169-1238](../src/book.rs#L1169-L1238) · [book.rs:1432-1442](../src/book.rs#L1432-L1442) · [book.rs:2870-2966](../src/book.rs#L2870-L2966) · [book.rs:3195-3215](../src/book.rs#L3195-L3215) · [translate.rs:545-595](../src/translate.rs#L545-L595) · +3</sub>
 
 ## Moving the pinned commit
 
@@ -84,4 +84,4 @@ report that the code moved when only documentation did. `code_moved`
 skips generated output and ignored files the same way, so `status` does not
 flag a commit that only added built docs.
 
-<sub>Sources: [book.rs:1091-1109](../src/book.rs#L1091-L1109) · [book.rs:2548-2583](../src/book.rs#L2548-L2583) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>Sources: [book.rs:1091-1109](../src/book.rs#L1091-L1109) · [book.rs:2755-2790](../src/book.rs#L2755-L2790) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>

@@ -74,7 +74,7 @@ Budgets scale with the code: under 20k lines `init` writes 4 pages and
 one and two CJK characters as one, and skips fenced code, so a Mermaid
 diagram is free. Over-budget pages and notes are warnings, never errors.
 
-<sub>Sources: [book.rs:255-264](../src/book.rs#L255-L264) · [book.rs:2218-2244](../src/book.rs#L2218-L2244) · [book.rs:2297-2319](../src/book.rs#L2297-L2319) · [book.rs:2127-2148](../src/book.rs#L2127-L2148) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
+<sub>Sources: [book.rs:255-264](../src/book.rs#L255-L264) · [book.rs:2425-2451](../src/book.rs#L2425-L2451) · [book.rs:2504-2526](../src/book.rs#L2504-L2526) · [book.rs:2334-2355](../src/book.rs#L2334-L2355) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
 
 ### Saving a note
 
@@ -108,7 +108,7 @@ The hash is deliberately dumb and stable: no dependency, identical on every
 platform, and blind to reformatting at line ends. Changing `hash_lines`
 would turn every pin in every existing book into a "code changed" error.
 
-<sub>Sources: [book.rs:1734-1787](../src/book.rs#L1734-L1787) · [book.rs:1810-1826](../src/book.rs#L1810-L1826) · [book.rs:1922-1929](../src/book.rs#L1922-L1929) · [lib.rs:36-43](../src/lib.rs#L36-L43)</sub>
+<sub>Sources: [book.rs:1941-1994](../src/book.rs#L1941-L1994) · [book.rs:2017-2033](../src/book.rs#L2017-L2033) · [book.rs:2129-2136](../src/book.rs#L2129-L2136) · [lib.rs:36-43](../src/lib.rs#L36-L43)</sub>
 
 ### Following moved code
 
@@ -126,7 +126,7 @@ get a pin. A missing file is first looked up in `git_renames`, which runs
 evidence. Commit `fa187ba` folded the old `pin` command into this step,
 so only code that really changed needs a person.
 
-<sub>Sources: [book.rs:1873-1919](../src/book.rs#L1873-L1919) · [book.rs:827-867](../src/book.rs#L827-L867) · [book.rs:2585-2616](../src/book.rs#L2585-L2616) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
+<sub>Sources: [book.rs:2080-2126](../src/book.rs#L2080-L2126) · [book.rs:827-867](../src/book.rs#L827-L867) · [book.rs:2792-2823](../src/book.rs#L2792-L2823) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
 
 ### Reviewing changed code with accept
 
@@ -165,7 +165,7 @@ branch (any remote branch when there is no origin), because a commit
 rewritten by a rebase can survive locally while its link 404s on the host
 (commits `2853a01`, `34b80cd`).
 
-<sub>Sources: [book.rs:1999-2061](../src/book.rs#L1999-L2061) · [book.rs:594-687](../src/book.rs#L594-L687) · [book.rs:1830-1871](../src/book.rs#L1830-L1871) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
+<sub>Sources: [book.rs:2206-2268](../src/book.rs#L2206-L2268) · [book.rs:594-687](../src/book.rs#L594-L687) · [book.rs:2037-2078](../src/book.rs#L2037-L2078) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
 
 ### Repetition through shared evidence
 
@@ -177,7 +177,7 @@ both notes and the shared lines. One shared range is an ordinary
 cross-reference and passes. The fix is to keep the explanation on one page
 and link to it from the others.
 
-<sub>Sources: [book.rs:2064-2109](../src/book.rs#L2064-L2109) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>
+<sub>Sources: [book.rs:2271-2316](../src/book.rs#L2271-L2316) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>
 
 <a id="output"></a>
 
@@ -202,7 +202,7 @@ dependencies between areas.
 JS/TS, Go, C-family includes) to files in the repository; anything external is
 dropped. A language without a resolver simply has no edges.
 
-<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2320-2326](../src/book.rs#L2320-L2326) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2527-2533](../src/book.rs#L2527-L2533) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ### Translations that cannot drift silently
 
@@ -222,7 +222,7 @@ differ, because those must be identical in every language. `accept zh`
 current source hash, refusing a symlinked or escaping file; it does not
 judge the prose.
 
-<sub>Sources: [translate.rs:1-13](../src/translate.rs#L1-L13) · [translate.rs:116-131](../src/translate.rs#L116-L131) · [translate.rs:174-245](../src/translate.rs#L174-L245) · [translate.rs:279-312](../src/translate.rs#L279-L312) · [translate.rs:454-512](../src/translate.rs#L454-L512) · +1</sub>
+<sub>Sources: [translate.rs:1-13](../src/translate.rs#L1-L13) · [translate.rs:132-147](../src/translate.rs#L132-L147) · [translate.rs:190-261](../src/translate.rs#L190-L261) · [translate.rs:295-328](../src/translate.rs#L295-L328) · [translate.rs:470-528](../src/translate.rs#L470-L528) · +1</sub>
 
 ### What build writes
 
@@ -245,7 +245,7 @@ marker first (no symlinks, nothing outside, a non-manifest marker stops the
 build), then deletes only listed files and refuses to overwrite any other
 file, so hand-written pages can share `docs/` with the book.
 
-<sub>Sources: [book.rs:1169-1238](../src/book.rs#L1169-L1238) · [book.rs:1438-1448](../src/book.rs#L1438-L1448) · [book.rs:2663-2759](../src/book.rs#L2663-L2759) · [book.rs:2988-3008](../src/book.rs#L2988-L3008) · [translate.rs:529-579](../src/translate.rs#L529-L579) · +3</sub>
+<sub>Sources: [book.rs:1169-1238](../src/book.rs#L1169-L1238) · [book.rs:1432-1442](../src/book.rs#L1432-L1442) · [book.rs:2870-2966](../src/book.rs#L2870-L2966) · [book.rs:3195-3215](../src/book.rs#L3195-L3215) · [translate.rs:545-595](../src/translate.rs#L545-L595) · +3</sub>
 
 ### Moving the pinned commit
 
@@ -261,7 +261,7 @@ report that the code moved when only documentation did. `code_moved`
 skips generated output and ignored files the same way, so `status` does not
 flag a commit that only added built docs.
 
-<sub>Sources: [book.rs:1091-1109](../src/book.rs#L1091-L1109) · [book.rs:2548-2583](../src/book.rs#L2548-L2583) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>Sources: [book.rs:1091-1109](../src/book.rs#L1091-L1109) · [book.rs:2755-2790](../src/book.rs#L2755-L2790) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
 
 <a id="contributing"></a>
 
@@ -289,7 +289,7 @@ output and needs a rebuild. Any change to the hash, the frontmatter format
 or the `book.md` keys breaks books already committed in other
 repositories; keep old forms readable.
 
-<sub>Sources: [book.rs:3064-3097](../src/book.rs#L3064-L3097) · [book.rs:3618-3627](../src/book.rs#L3618-L3627) · [lib.rs:14-16](../src/lib.rs#L14-L16) · [main.rs:232-242](../src/main.rs#L232-L242) · [test.yml](../.github/workflows/test.yml) · +1</sub>
+<sub>Sources: [book.rs:3271-3304](../src/book.rs#L3271-L3304) · [book.rs:3825-3834](../src/book.rs#L3825-L3834) · [lib.rs:14-16](../src/lib.rs#L14-L16) · [main.rs:232-242](../src/main.rs#L232-L242) · [test.yml](../.github/workflows/test.yml) · +1</sub>
 
 ### Releases and the npm wrapper
 
@@ -318,7 +318,7 @@ GitHub release job: without the release assets, installs fail.
 
 Generated by Codocia from the code on every build: areas, each area's own description, import dependencies between areas, and the pages that explain them.
 
-In scope: 16 files, 8,064 lines; excluded `Cargo.lock`, `LICENSE`, `.gitignore`, `homebrew-tap-template/**`, `docs/**`, `**/.DS_Store`
+In scope: 16 files, 8,982 lines; excluded `Cargo.lock`, `LICENSE`, `.gitignore`, `homebrew-tap-template/**`, `docs/**`, `**/.DS_Store`
 
 ### Files
 
@@ -328,28 +328,9 @@ In scope: 16 files, 8,064 lines; excluded `Cargo.lock`, `LICENSE`, `.gitignore`,
   Explained in: [Contributing](#contributing) (1)
 - `.github/` — 264 lines, 2 files\
   Explained in: [Contributing](#contributing) (2)
-- `src/` — 7,075 lines, 5 files. Library API for Codocia.\
+- `npm/` — 355 lines, 5 files. A notebook for AI coding agents that compiles source-grounded, drift-checked docs.\
+  Hub files: `scripts/install.js`\
+  Explained in: [Contributing](#contributing) (1)
+- `src/` — 7,993 lines, 5 files. Library API for Codocia.\
   Hub files: `book.rs` `structure.rs` `lib.rs`\
   Explained in: [Overview](#overview) (4), [Evidence and review](#evidence) (5), [Structure, translations and build](#output) (4), [Contributing](#contributing) (1)
-
-**`npm/`**
-
-- (files) — 103 lines, 2 files. A notebook for AI coding agents that compiles source-grounded, drift-checked docs.\
-  Explained in: not covered
-- `bin/` — 25 lines, 1 file\
-  Explained in: [Contributing](#contributing) (1)
-- `scripts/` — 227 lines, 2 files\
-  Hub files: `install.js`\
-  Explained in: [Contributing](#contributing) (1)
-
-
-### Dependencies
-
-A → B means files in A import B; the number counts file-level imports. Showing the strongest 1 of 1 edges.
-
-```mermaid
-flowchart LR
-  a2["npm/*"]
-  a4["npm/scripts/"]
-  a4 -->|2| a2
-```

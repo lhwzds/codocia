@@ -19,7 +19,7 @@ The hash is deliberately dumb and stable: no dependency, identical on every
 platform, and blind to reformatting at line ends. Changing `hash_lines`
 would turn every pin in every existing book into a "code changed" error.
 
-<sub>Sources: [book.rs:1734-1787](../src/book.rs#L1734-L1787) · [book.rs:1810-1826](../src/book.rs#L1810-L1826) · [book.rs:1922-1929](../src/book.rs#L1922-L1929) · [lib.rs:36-43](../src/lib.rs#L36-L43)</sub>
+<sub>Sources: [book.rs:1941-1994](../src/book.rs#L1941-L1994) · [book.rs:2017-2033](../src/book.rs#L2017-L2033) · [book.rs:2129-2136](../src/book.rs#L2129-L2136) · [lib.rs:36-43](../src/lib.rs#L36-L43)</sub>
 
 ## Following moved code
 
@@ -37,7 +37,7 @@ get a pin. A missing file is first looked up in `git_renames`, which runs
 evidence. Commit `fa187ba` folded the old `pin` command into this step,
 so only code that really changed needs a person.
 
-<sub>Sources: [book.rs:1873-1919](../src/book.rs#L1873-L1919) · [book.rs:827-867](../src/book.rs#L827-L867) · [book.rs:2585-2616](../src/book.rs#L2585-L2616) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
+<sub>Sources: [book.rs:2080-2126](../src/book.rs#L2080-L2126) · [book.rs:827-867](../src/book.rs#L827-L867) · [book.rs:2792-2823](../src/book.rs#L2792-L2823) · [commit 8c83c23](https://github.com/lhwzds/codocia/commit/8c83c23) · [commit fa187ba](https://github.com/lhwzds/codocia/commit/fa187ba)</sub>
 
 ## Reviewing changed code with accept
 
@@ -76,7 +76,7 @@ branch (any remote branch when there is no origin), because a commit
 rewritten by a rebase can survive locally while its link 404s on the host
 (commits `2853a01`, `34b80cd`).
 
-<sub>Sources: [book.rs:1999-2061](../src/book.rs#L1999-L2061) · [book.rs:594-687](../src/book.rs#L594-L687) · [book.rs:1830-1871](../src/book.rs#L1830-L1871) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
+<sub>Sources: [book.rs:2206-2268](../src/book.rs#L2206-L2268) · [book.rs:594-687](../src/book.rs#L594-L687) · [book.rs:2037-2078](../src/book.rs#L2037-L2078) · [commit 2853a01](https://github.com/lhwzds/codocia/commit/2853a01) · [commit 34b80cd](https://github.com/lhwzds/codocia/commit/34b80cd)</sub>
 
 ## Repetition through shared evidence
 
@@ -88,4 +88,4 @@ both notes and the shared lines. One shared range is an ordinary
 cross-reference and passes. The fix is to keep the explanation on one page
 and link to it from the others.
 
-<sub>Sources: [book.rs:2064-2109](../src/book.rs#L2064-L2109) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>
+<sub>Sources: [book.rs:2271-2316](../src/book.rs#L2271-L2316) · [commit 87bbfdd](https://github.com/lhwzds/codocia/commit/87bbfdd)</sub>

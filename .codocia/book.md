@@ -1,7 +1,7 @@
 ---
 title: Codocia
 repo: ..
-commit: 4c15641050f8759bea76ce642f19481a2cc4ab96
+commit: 7fefb1d4aea0885460e69b6cc3180981289f224d
 remote: https://github.com/lhwzds/codocia
 lang: en
 max_pages: 4
@@ -19,7 +19,7 @@ ignore:
   - .gitignore
   - homebrew-tap-template/**
   - docs/**
-  - **/.DS_Store
+  - "**/.DS_Store"
 langs:
   - zh
 translations:
