@@ -1,7 +1,7 @@
 ---
 title: Codocia
 repo: ..
-commit: 7fefb1d4aea0885460e69b6cc3180981289f224d
+commit: 3b59c52654cede640849d958b11b7d1ec90113d2
 remote: https://github.com/lhwzds/codocia
 lang: en
 max_pages: 4
@@ -23,7 +23,7 @@ ignore:
 langs:
   - zh
 translations:
-  - README_CN.md: README.md #f0590f319bf4
+  - README_CN.md: README.md #30787de5c032
 ---
 
 Codocia is a notebook and compiler for AI coding agents: the agent reads a

@@ -47,7 +47,7 @@ never count as code: not in coverage, not in [Code structure](structure.md), and
 note does not mean the code moved. Commit `618468e` moved the book into the
 repository so the docs travel with the code they describe.
 
-<sub>Sources: [book.rs:148-182](../src/book.rs#L148-L182) · [book.rs:215-223](../src/book.rs#L215-L223) · [book.rs:1352-1366](../src/book.rs#L1352-L1366) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
+<sub>Sources: [book.rs:148-182](../src/book.rs#L148-L182) · [book.rs:215-223](../src/book.rs#L215-L223) · [book.rs:1367-1381](../src/book.rs#L1367-L1381) · [commit 618468e](https://github.com/lhwzds/codocia/commit/618468e)</sub>
 
 ## Scope, coverage and budgets
 
@@ -65,7 +65,7 @@ Budgets scale with the code: under 20k lines `init` writes 4 pages and
 one and two CJK characters as one, and skips fenced code, so a Mermaid
 diagram is free. Over-budget pages and notes are warnings, never errors.
 
-<sub>Sources: [book.rs:255-264](../src/book.rs#L255-L264) · [book.rs:2425-2451](../src/book.rs#L2425-L2451) · [book.rs:2504-2526](../src/book.rs#L2504-L2526) · [book.rs:2334-2355](../src/book.rs#L2334-L2355) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
+<sub>Sources: [book.rs:255-264](../src/book.rs#L255-L264) · [book.rs:2440-2466](../src/book.rs#L2440-L2466) · [book.rs:2519-2541](../src/book.rs#L2519-L2541) · [book.rs:2349-2370](../src/book.rs#L2349-L2370) · [commit ec1da64](https://github.com/lhwzds/codocia/commit/ec1da64) · +1</sub>
 
 ## Saving a note
 

@@ -25,7 +25,7 @@ dependencies between areas.
 JS/TS, Go, C-family includes) to files in the repository; anything external is
 dropped. A language without a resolver simply has no edges.
 
-<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2527-2533](../src/book.rs#L2527-L2533) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
+<sub>Sources: [structure.rs:1-5](../src/structure.rs#L1-L5) · [structure.rs:34-130](../src/structure.rs#L34-L130) · [structure.rs:329-350](../src/structure.rs#L329-L350) · [book.rs:2542-2548](../src/book.rs#L2542-L2548) · [commit 38c44b1](https://github.com/lhwzds/codocia/commit/38c44b1) · +2</sub>
 
 ## Translations that cannot drift silently
 
@@ -68,7 +68,15 @@ marker first (no symlinks, nothing outside, a non-manifest marker stops the
 build), then deletes only listed files and refuses to overwrite any other
 file, so hand-written pages can share `docs/` with the book.
 
-<sub>Sources: [book.rs:1169-1238](../src/book.rs#L1169-L1238) · [book.rs:1432-1442](../src/book.rs#L1432-L1442) · [book.rs:2870-2966](../src/book.rs#L2870-L2966) · [book.rs:3195-3215](../src/book.rs#L3195-L3215) · [translate.rs:545-595](../src/translate.rs#L545-L595) · +3</sub>
+<sub>Sources: [book.rs:1169-1238](../src/book.rs#L1169-L1238) · [book.rs:1447-1457](../src/book.rs#L1447-L1457) · [book.rs:2870-2966](../src/book.rs#L2870-L2966) · [book.rs:3775-3795](../src/book.rs#L3775-L3795) · [translate.rs:545-595](../src/translate.rs#L545-L595) · +3</sub>
+
+## A page as a SKILL.md
+
+With `--skill-page <page>`, `build` also writes `<out>/skill/<id>/SKILL.md`, so skrun and other agents can store and find the page as a skill. The page is checked before anything is written; an unknown slug fails. The id is the repository folder name reduced to `[a-z0-9._-]`. The file is listed in `.codocia-build` like every page, so a later build without the flag deletes it, and `remove_empty_parents` removes the folders it leaves empty.
+
+The frontmatter is one line per key (`name`, `description`, `version`, `tags: [<id>]`) because skrun reads it with line parsers, not YAML. `skill_scalar` makes every value safe for both: no `"`, no edge quotes, no `\\`. The description is the first sentence of the first paragraph of the first note. The version comes from `Cargo.toml`, `pyproject.toml` or `package.json`; the TOML reader returns nothing when unsure (at the first `"""` or `'''`), never another table's version, and the fallback is `0.1.0`. Source links are permalinks with a 12-character commit: skill stores hide lines holding a 40-hex run.
+
+<sub>Sources: [book.rs:1177-1180](../src/book.rs#L1177-L1180) · [book.rs:1231-1234](../src/book.rs#L1231-L1234) · [book.rs:2987-3006](../src/book.rs#L2987-L3006) · [book.rs:3246-3311](../src/book.rs#L3246-L3311) · [book.rs:3476-3528](../src/book.rs#L3476-L3528) · +1</sub>
 
 ## Moving the pinned commit
 
@@ -84,4 +92,4 @@ report that the code moved when only documentation did. `code_moved`
 skips generated output and ignored files the same way, so `status` does not
 flag a commit that only added built docs.
 
-<sub>Sources: [book.rs:1091-1109](../src/book.rs#L1091-L1109) · [book.rs:2755-2790](../src/book.rs#L2755-L2790) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>
+<sub>Sources: [book.rs:1091-1109](../src/book.rs#L1091-L1109) · [book.rs:2770-2805](../src/book.rs#L2770-L2805) · [commit ed8fc0e](https://github.com/lhwzds/codocia/commit/ed8fc0e) · [commit b8905c3](https://github.com/lhwzds/codocia/commit/b8905c3)</sub>

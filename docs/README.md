@@ -15,11 +15,11 @@ an engineer about to change it.
 
 1. [Overview](01-overview.md) — Where the book lives · Scope, coverage and budgets · Saving a note
 2. [Evidence and review](02-evidence.md) — Following moved code · Reviewing changed code with accept · What else check enforces · Repetition through shared evidence
-3. [Structure, translations and build](03-output.md) — The generated structure map · Translations that cannot drift silently · What build writes · Moving the pinned commit
+3. [Structure, translations and build](03-output.md) — The generated structure map · Translations that cannot drift silently · What build writes · A page as a SKILL.md · Moving the pinned commit
 4. [Contributing](04-contributing.md) — Releases and the npm wrapper
 
 ## Appendix
 
 - [Code structure](structure.md) — generated from the code: areas, dependencies, pages
 
-<sub>Generated from https://github.com/lhwzds/codocia @ `7fefb1d4ae`</sub>
+<sub>Generated from https://github.com/lhwzds/codocia @ `3b59c52654`</sub>

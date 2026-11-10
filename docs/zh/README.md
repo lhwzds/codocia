@@ -12,11 +12,11 @@ Codocia 是给 AI 编程智能体用的笔记本和编译器：智能体阅读�
 
 1. [概览](01-overview.md) — 书放在哪里 · 范围、覆盖与预算 · 保存笔记
 2. [证据与审阅](02-evidence.md) — 跟随移动的代码 · 用 accept 审阅变动的代码 · check 的其他规则 · 通过共享证据发现重复
-3. [结构、翻译与构建](03-output.md) — 生成的结构图 · 不会悄悄漂移的翻译 · build 写出什么 · 移动固定提交
+3. [结构、翻译与构建](03-output.md) — 生成的结构图 · 不会悄悄漂移的翻译 · build 写出什么 · 把一页写成 SKILL.md · 移动固定提交
 4. [参与开发](04-contributing.md) — 发布与 npm 包装
 
 ## 附录
 
 - [代码结构](structure.md) — 从代码生成：功能区、依赖、讲解页
 
-<sub>生成自 https://github.com/lhwzds/codocia @ `7fefb1d4ae`</sub>
+<sub>生成自 https://github.com/lhwzds/codocia @ `3b59c52654`</sub>
