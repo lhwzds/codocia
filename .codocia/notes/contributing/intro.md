@@ -7,7 +7,7 @@ evidence:
   - src/lib.rs:14-16 #46689c54866c
   - src/main.rs:243-253 #fb72c76bb572
   - .github/workflows/test.yml #d14f91274e6f
-  - Cargo.toml #e0005ded5f2f
+  - Cargo.toml #71485c03b938
 ---
 
 Codocia is one Rust crate with two dependencies (`anyhow`, `clap`); `libc`
