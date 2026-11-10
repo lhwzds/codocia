@@ -3269,19 +3269,31 @@ fn safe_version(version: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '_' | '-'))
 }
 
-/// The `version = "x"` of one TOML section, found by scanning lines.
+/// The `version = "x"` of one TOML section, found by scanning lines. Its only
+/// job is the `version` string of that one section: anything the reader is not
+/// sure about gives `None`, so `skill_version` tries the next source and then
+/// `0.1.0`, never a version of another table. A line that holds a multi-line
+/// string delimiter (`"""` or `'''`), anywhere in it, makes every line after it
+/// unsure, so the reader gives up there; up to that line the file holds no
+/// multi-line string, and the header and bracket logic below is exact.
 fn read_toml_version(path: &Path, section: &str) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
     let mut inside = false;
     // How deep the previous line of a value sits inside an unfinished
-    // multi-line array.
+    // multi-line array or inline table. A stray closing bracket never takes it
+    // below zero.
     let mut depth = 0;
     for line in text.lines() {
         let line = line.trim();
+        // A multi-line string hides how many lines a value spans, so a version
+        // found after one would be a guess.
+        if line.contains("\"\"\"") || line.contains("'''") {
+            return None;
+        }
         if depth > 0 {
             // A line that continues a multi-line value is neither a header
             // nor a version.
-            depth = toml_bracket_depth(line, depth);
+            depth = toml_bracket_depth(line, depth).max(0);
             continue;
         }
         if line.starts_with('[') {
@@ -3290,7 +3302,7 @@ fn read_toml_version(path: &Path, section: &str) -> Option<String> {
             inside = !line.starts_with("[[") && toml_section_name(line) == Some(section);
             continue;
         }
-        depth = toml_bracket_depth(line, depth);
+        depth = toml_bracket_depth(line, depth).max(0);
         if inside && let Some(value) = toml_string_value(line, "version") {
             return Some(value);
         }
@@ -3318,13 +3330,13 @@ fn toml_section_name(line: &str) -> Option<&str> {
     (!inner.is_empty()).then_some(inner)
 }
 
-/// How deeply a line of a value sits inside an unfinished multi-line array:
-/// every `[` outside a string opens a bracket and every `]` outside a string
-/// closes one.
+/// How deeply a line of a value sits inside an unfinished multi-line array or
+/// inline table: every `[` or `{` outside a string opens a bracket and every
+/// `]` or `}` outside a string closes one.
 fn toml_bracket_depth(line: &str, depth: i32) -> i32 {
     outside_strings(line).fold(depth, |depth, (_, ch)| match ch {
-        '[' => depth + 1,
-        ']' => depth - 1,
+        '[' | '{' => depth + 1,
+        ']' | '}' => depth - 1,
         _ => depth,
     })
 }
@@ -3526,8 +3538,10 @@ fn skill_description(book: &Book, notes: &[Note], page: &Page) -> String {
         }
         None => String::new(),
     };
-    let flat = collapse_whitespace(&text);
-    let mut description = first_sentence(&flat).unwrap_or_else(|| first_paragraph(&text));
+    // Only the first paragraph is read: a sentence of a later paragraph
+    // describes that paragraph, not the skill.
+    let paragraph = first_paragraph(&text);
+    let mut description = first_sentence(&paragraph).unwrap_or(paragraph);
     description = skill_scalar(&description);
     description = cut_at_word(&description, 300);
     // The cut may leave a backslash at the end.
@@ -3654,9 +3668,15 @@ fn one_line_title(book: &Book) -> String {
     book.title.replace(['\n', '\r'], " ").trim().to_string()
 }
 
-/// The `name` of the skill: the book title, quoted when it would not parse.
+/// The `name` of the skill: the book title, quoted when it would not parse,
+/// and the skill id when the title holds nothing but quotes.
 fn skill_name(book: &Book) -> String {
     let name = skill_scalar(&book.title);
+    let name = if name.is_empty() {
+        skill_id(book)
+    } else {
+        name
+    };
     if name.contains(": ")
         || name.contains(" #")
         || name.starts_with('#')
@@ -3665,10 +3685,19 @@ fn skill_name(book: &Book) -> String {
     {
         // A quoted name holds no quote of its own: the readers would strip
         // it and read another name.
-        let name = name.trim_end_matches('\'');
         format!("\"{name}\"")
     } else {
         name
+    }
+}
+
+/// The commit of a permalink in a skill file: a long hex hash is cut to 12
+/// characters, anything else stays as it is.
+fn skill_commit(commit: &str) -> String {
+    if commit.chars().count() > 12 && commit.chars().all(|c| c.is_ascii_hexdigit()) {
+        commit.chars().take(12).collect()
+    } else {
+        commit.to_string()
     }
 }
 
@@ -3687,7 +3716,21 @@ fn render_skill(book: &Book, notes: &[Note], slug: &str) -> Result<(String, Stri
     // relative links: sources become permalinks and page links plain text.
     let mut plain = book.clone();
     plain.link_base = None;
-    let body = page_notes_body(&plain, notes, slug);
+    // A skill store hides a line that holds a full 40-hex commit, as it looks
+    // like a leaked token, so the permalinks carry a short commit.
+    plain.commit = skill_commit(&plain.commit);
+    // The same hiding applies to commit evidence: a note that cites a commit
+    // cites its short form in the skill file.
+    let mut cited = notes.to_vec();
+    for note in &mut cited {
+        for evidence in &mut note.evidence {
+            if let EvidenceRef::Commit(sha) = &mut evidence.target {
+                let short = skill_commit(sha);
+                *sha = short;
+            }
+        }
+    }
+    let body = page_notes_body(&plain, &cited, slug);
     let body = resolve_links(&body, |inner| skill_link_text(&plain, inner));
     let mut content = format!(
         "---\nname: {}\ndescription: \"{}\"\nversion: {}\ntags: [{id}]\n---\n\n# {title}\n",
@@ -6608,6 +6651,11 @@ The `run` function calls `step`.
         assert_eq!(skill_name(&book), "\"#Demo\"");
         let book = plain_book(&root, "#Demo\"");
         assert_eq!(skill_name(&book), "\"#Demo\"");
+        // A title that holds nothing but quotes falls back to the skill id.
+        let book = plain_book(&root, "\"\"");
+        assert_eq!(skill_name(&book), skill_id(&book));
+        let book = plain_book(&root, "\"");
+        assert_eq!(skill_name(&book), skill_id(&book));
     }
 
     #[test]
@@ -6772,6 +6820,10 @@ The `run` function calls `step`.
         // A line of an array value keeps the value open.
         assert_eq!(toml_bracket_depth("[\"a\", \"b\"],", 1), 1);
         assert_eq!(toml_bracket_depth("]", 1), 0);
+        // A multi-line inline table keeps a value open like an array does.
+        assert_eq!(toml_bracket_depth("meta = {", 0), 1);
+        assert_eq!(toml_bracket_depth("  version = \"9.9\",", 1), 1);
+        assert_eq!(toml_bracket_depth("}", 1), 0);
     }
 
     #[test]
@@ -6825,6 +6877,99 @@ The `run` function calls `step`.
         let out = temp_dir("skill-toml-array");
         let lines = skill_lines(&book, &out);
         assert!(lines.contains(&"version: 1.4.2".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_reads_a_version_before_a_multi_line_string() {
+        let (repo, book) = skill_fixture();
+        // The reader gives up at the first multi-line string, so a version
+        // before it is still read.
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nversion = \"1.0.0\"\ndescription = \"\"\"\nA [x\n\"\"\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-toml-before-string");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 1.0.0".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_gives_up_at_a_one_line_multi_line_string() {
+        let (repo, book) = skill_fixture();
+        // A multi-line string that opens and closes on one line was misread as
+        // an open one, and a version of another table was used instead.
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\ndescription = \"\"\"It's a demo\"\"\"\n[dependencies.foo]\ndescription = \"\"\"It's foo\"\"\"\nversion = \"6.6.6\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-toml-one-line-string");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 0.1.0".to_string()), "{lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("6.6.6")), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_gives_up_at_a_multi_line_string_in_pyproject() {
+        let (repo, book) = skill_fixture();
+        // The same shape in pyproject.toml: no version of another table.
+        fs::write(
+            repo.join("pyproject.toml"),
+            "[project]\ndescription = \"\"\"It's a demo\"\"\"\n[tool.a]\ndescription = \"\"\"It's foo\"\"\"\nversion = \"6.6.6\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-pyproject-one-line-string");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 0.1.0".to_string()), "{lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("6.6.6")), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_gives_up_at_a_header_inside_a_multi_line_string() {
+        let (repo, book) = skill_fixture();
+        // A header inside a literal multi-line string is not a header, so the
+        // version after it is a guess.
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\ndescription = '''\n[not a header]\n'''\nversion = \"2.0.0\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-toml-header");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 0.1.0".to_string()), "{lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("2.0.0")), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_reads_a_version_after_a_multi_line_inline_table() {
+        let (repo, book) = skill_fixture();
+        // A multi-line inline table is a continuation, and its own version is
+        // not the version of the section.
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nmeta = {\n  version = \"9.9\",\n}\nversion = \"3.0.0\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-toml-inline-table");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 3.0.0".to_string()), "{lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("9.9")), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_skips_a_stray_bracket_and_an_array_element() {
+        let (repo, book) = skill_fixture();
+        // A stray closing bracket may not take the scanner below the value,
+        // where the elements of the array would look like headers.
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nbroken = ]\nkeywords = [\n[\"a\"],\n]\nversion = \"3.0.0\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-toml-stray");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 3.0.0".to_string()), "{lines:?}");
     }
 
     #[test]
@@ -6892,6 +7037,11 @@ The `run` function calls `step`.
             "First paragraph without a terminator\n\nSecond paragraph without one".to_string();
         let text = skill_description(&loaded, &notes, &page);
         assert_eq!(text, "First paragraph without a terminator");
+        // A sentence of a later paragraph does not describe the skill: the
+        // first paragraph without a sentence end does.
+        notes[0].body = "Intro without a full stop\n\nSecond paragraph. More.".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "Intro without a full stop");
         // An empty note falls back to the book and page title.
         notes[0].body = String::new();
         let text = skill_description(&loaded, &notes, &page);
@@ -6996,6 +7146,67 @@ The `run` function calls `step`.
         let page = fs::read_to_string(out.join("01-overview.md")).unwrap();
         assert!(
             page.contains("https://github.com/acme/demo/blob/"),
+            "{page}"
+        );
+    }
+
+    #[test]
+    fn skill_permalinks_carry_a_short_commit() {
+        let (repo, book) = skill_fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.remote = Some("https://github.com/acme/demo".to_string());
+        fs::write(book.join(BOOK_FILE), render_book(&loaded)).unwrap();
+        // A note that cites the pinned commit of the repository.
+        let commit = String::from_utf8(
+            Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        let commit = commit.trim().to_string();
+        assert_eq!(commit.len(), 40, "{commit}");
+        add(
+            &book,
+            "history",
+            &[&format!("commit:{commit}")],
+            "The loop landed in one commit.",
+        )
+        .unwrap();
+        let out = temp_dir("skill-short-commit");
+        build(&book, Some(out.clone()), false, Some("overview")).unwrap();
+        let text = fs::read_to_string(out.join("skill/repo/SKILL.md")).unwrap();
+        let links = link_targets(&text);
+        assert!(!links.is_empty(), "{text}");
+        let short = &commit[..12];
+        for link in &links {
+            assert!(
+                link.contains(&format!("/blob/{short}/"))
+                    || link.contains(&format!("/commit/{short}")),
+                "{link} in {text}"
+            );
+        }
+        // No line of the skill file holds a 40-hex run: a skill store hides
+        // such lines as possible tokens, so the commit evidence is short too.
+        for line in text.lines() {
+            let mut run = 0;
+            for ch in line.chars().chain([' ']) {
+                run = if ch.is_ascii_hexdigit() { run + 1 } else { 0 };
+                assert!(run < 40, "{line} in {text}");
+            }
+        }
+        // The page itself keeps the full commit, in a permalink and in the
+        // commit evidence of the note.
+        let page = fs::read_to_string(out.join("01-overview.md")).unwrap();
+        assert!(
+            page.contains(&format!("https://github.com/acme/demo/blob/{commit}/")),
+            "{page}"
+        );
+        assert!(
+            page.contains(&format!("https://github.com/acme/demo/commit/{commit}")),
             "{page}"
         );
     }
