@@ -79,6 +79,8 @@ your-repo/
 | `build [--out dir]` | Write `docs/` (or `out:` from `book.md`) and `docs/<lang>/`, moving the book to the current commit |
 | `skill` | Print the agent workflow ([SKILL.md](SKILL.md)) |
 
+`codocia build --skill-page <page>` also writes `<out>/skill/<repo>/SKILL.md`, that page as a skill file for agents.
+
 ## In CI
 
 ```yaml

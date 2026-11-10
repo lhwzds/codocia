@@ -66,6 +66,8 @@ codocia build             # docs/README.md, docs/NN-page.md, docs/all.md
 Every command finds the nearest `.codocia/` from the current directory;
 `--book <dir>` points at another book. If the repository publishes docs from a
 subdirectory, set `out: docs/public` (repository-relative) in `book.md`.
+`codocia build --skill-page <page>` also writes `<out>/skill/<repo>/SKILL.md`:
+that page as a skill file for agents.
 
 1. **Scope first.** Run `status` once, then put tests, benchmarks, examples,
    vendored code, and generated files in `ignore`. The coverage map then shows

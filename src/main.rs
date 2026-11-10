@@ -83,6 +83,9 @@ enum Command {
         /// Build even when check reports errors.
         #[arg(long)]
         force: bool,
+        /// Also write <out>/skill/<repo>/SKILL.md from this page (for skrun and other agents).
+        #[arg(long, value_name = "PAGE")]
+        skill_page: Option<String>,
     },
     /// Print the agent workflow guide.
     Skill,
@@ -223,9 +226,17 @@ fn main() -> Result<()> {
         Some(Command::Check { book, page }) => {
             book::check(&book::find_book(book.as_deref())?, page.as_deref())
         }
-        Some(Command::Build { book, out, force }) => {
-            book::build(&book::find_book(book.as_deref())?, out, force)
-        }
+        Some(Command::Build {
+            book,
+            out,
+            force,
+            skill_page,
+        }) => book::build(
+            &book::find_book(book.as_deref())?,
+            out,
+            force,
+            skill_page.as_deref(),
+        ),
     }
 }
 

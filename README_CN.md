@@ -58,6 +58,8 @@ your-repo/
 | `build [--out dir]` | 写出 `docs/`（或 `book.md` 中 `out:` 指定的目录）以及 `docs/<lang>/`，并把书移到当前提交 |
 | `skill` | 打印智能体工作流程（[SKILL.md](SKILL.md)） |
 
+`codocia build --skill-page <page>` 还会写出 `<out>/skill/<repo>/SKILL.md`，把该页写成给智能体用的技能文件。
+
 ## 在 CI 中
 
 ```yaml

@@ -1166,8 +1166,19 @@ fn validate_implicit_output(anchor: &Path, out: &Path, location: &str) -> Result
     Ok(())
 }
 
-pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
+pub fn build(
+    book_dir: &Path,
+    out: Option<PathBuf>,
+    force: bool,
+    skill_page: Option<&str>,
+) -> Result<()> {
     let book = load_book(book_dir)?;
+    // The page is checked before anything is written.
+    if let Some(page) = skill_page
+        && !book.pages.iter().any(|p| p.slug == page)
+    {
+        bail!("--skill-page: no page \"{page}\" in {BOOK_FILE}");
+    }
     let repo = book.repo_path().canonicalize()?;
     let implicit = out.is_none();
     let repository_output = book.out.is_some() || book.dir == repo.join(".codocia");
@@ -1217,6 +1228,10 @@ pub fn build(book_dir: &Path, out: Option<PathBuf>, force: bool) -> Result<()> {
         }
     }
     crate::translate::add_languages(&book, &notes, &map, &mut files, in_repo)?;
+    if let Some(page) = skill_page {
+        let (name, content) = render_skill(&book, &notes, page)?;
+        files.push((name, content));
+    }
     let names: Vec<String> = files.iter().map(|(n, _)| n.clone()).collect();
     prepare_output(&out, &names)?;
     for (name, content) in &files {
@@ -2960,9 +2975,34 @@ fn prepare_output(out: &Path, names: &[String]) -> Result<()> {
             && (metadata.is_file() || metadata.file_type().is_symlink())
         {
             fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
+            // A skill file has a folder of its own: the empty folder goes
+            // with it.
+            remove_empty_parents(&path, out);
         }
     }
     Ok(())
+}
+
+/// Removes the empty folders above `path`, up to but not including `out`.
+fn remove_empty_parents(path: &Path, out: &Path) {
+    let mut current = path.parent().map(Path::to_path_buf);
+    while let Some(folder) = current {
+        if folder.as_path() == out || !folder.starts_with(out) {
+            return;
+        }
+        match fs::read_dir(&folder) {
+            Ok(mut entries) => {
+                if entries.next().is_some() {
+                    return;
+                }
+            }
+            Err(_) => return,
+        }
+        if fs::remove_dir(&folder).is_err() {
+            return;
+        }
+        current = folder.parent().map(Path::to_path_buf);
+    }
 }
 
 // Demote ATX headings without changing fenced code blocks.
@@ -3006,6 +3046,38 @@ fn page_file(book: &Book, slug: &str) -> String {
     }
     let index = book.pages.iter().position(|p| p.slug == slug).unwrap_or(0);
     format!("{:02}-{slug}.md", index + 1)
+}
+
+/// The body of a page: every note with its heading, its text and its source
+/// line. Page links stay `[[slug]]` so the caller can resolve them.
+fn page_notes_body(book: &Book, notes: &[Note], slug: &str) -> String {
+    let mut body = String::new();
+    for note in notes.iter().filter(|n| n.page == slug) {
+        if !note.title.is_empty() {
+            body.push_str(&format!("## {}\n\n", note.title));
+        }
+        body.push_str(note.body.trim());
+        body.push_str("\n\n");
+        let sources: Vec<String> = note
+            .evidence
+            .iter()
+            .map(|e| evidence_link(book, &e.target))
+            .collect();
+        if !sources.is_empty() {
+            const SHOWN: usize = 5;
+            let mut line = sources
+                .iter()
+                .take(SHOWN)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" · ");
+            if sources.len() > SHOWN {
+                line.push_str(&format!(" · +{}", sources.len() - SHOWN));
+            }
+            body.push_str(&format!("<sub>{}: {line}</sub>\n\n", book.label("Sources")));
+        }
+    }
+    body
 }
 
 /// Returns `(relative file name, content)` for every output file.
@@ -3086,32 +3158,7 @@ pub fn render_site(
     files.push(("index.md".to_string(), index));
 
     for page in &book.pages {
-        let mut body = String::new();
-        for note in notes.iter().filter(|n| n.page == page.slug) {
-            if !note.title.is_empty() {
-                body.push_str(&format!("## {}\n\n", note.title));
-            }
-            body.push_str(note.body.trim());
-            body.push_str("\n\n");
-            let sources: Vec<String> = note
-                .evidence
-                .iter()
-                .map(|e| evidence_link(book, &e.target))
-                .collect();
-            if !sources.is_empty() {
-                const SHOWN: usize = 5;
-                let mut line = sources
-                    .iter()
-                    .take(SHOWN)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(" · ");
-                if sources.len() > SHOWN {
-                    line.push_str(&format!(" · +{}", sources.len() - SHOWN));
-                }
-                body.push_str(&format!("<sub>{}: {line}</sub>\n\n", book.label("Sources")));
-            }
-        }
+        let body = page_notes_body(book, notes, &page.slug);
         let page_body = resolve_links(&body, |slug| {
             format!(
                 "[{}]({})",
@@ -3162,6 +3209,496 @@ pub fn render_site(
     }
     files.push(("all.md".to_string(), all.trim_end().to_string() + "\n"));
     files
+}
+
+// ---------------------------------------------------------------------------
+// Skill file: SKILL.md for agent skill stores
+
+/// The directory name of the skill: the repository folder, lowercased, with
+/// every character outside `[a-z0-9._-]` replaced by `-` and the leading and
+/// trailing `-` and `.` removed.
+fn skill_id(book: &Book) -> String {
+    let repo = book.repo_path();
+    let canonical = repo.canonicalize().unwrap_or(repo);
+    let name = canonical
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let mut id = String::new();
+    for ch in name.to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-' {
+            id.push(ch);
+        } else {
+            id.push('-');
+        }
+    }
+    let id = id.trim_matches(|c| c == '-' || c == '.').to_string();
+    if id.is_empty() {
+        "skill".to_string()
+    } else {
+        id
+    }
+}
+
+/// The version of the repository: Cargo.toml, then pyproject.toml, then
+/// package.json, then `0.1.0`. A version that would need quoting is
+/// skipped: the frontmatter holds one plain value.
+fn skill_version(book: &Book) -> String {
+    let repo = book.repo_path();
+    let cargo = repo.join("Cargo.toml");
+    let sources = [
+        read_toml_version(&cargo, "package"),
+        read_toml_version(&cargo, "workspace.package"),
+        read_toml_version(&repo.join("pyproject.toml"), "project"),
+        read_package_json_version(&repo.join("package.json")),
+    ];
+    for version in sources.into_iter().flatten() {
+        if safe_version(&version) {
+            return version;
+        }
+    }
+    "0.1.0".to_string()
+}
+
+/// A version that can be written as it is: not empty, and nothing but
+/// letters, digits, `.`, `+`, `_` and `-`.
+fn safe_version(version: &str) -> bool {
+    !version.is_empty()
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '_' | '-'))
+}
+
+/// The `version = "x"` of one TOML section, found by scanning lines.
+fn read_toml_version(path: &Path, section: &str) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let mut inside = false;
+    // How deep the previous line of a value sits inside an unfinished
+    // multi-line array.
+    let mut depth = 0;
+    for line in text.lines() {
+        let line = line.trim();
+        if depth > 0 {
+            // A line that continues a multi-line value is neither a header
+            // nor a version.
+            depth = toml_bracket_depth(line, depth);
+            continue;
+        }
+        if line.starts_with('[') {
+            // A header: an array table closes the current section and never
+            // opens a matching one.
+            inside = !line.starts_with("[[") && toml_section_name(line) == Some(section);
+            continue;
+        }
+        depth = toml_bracket_depth(line, depth);
+        if inside && let Some(value) = toml_string_value(line, "version") {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// The name of a TOML table header `[name]`: the text between the brackets,
+/// trimmed, where any character is allowed, quotes included. A comment may
+/// follow the header. `None` for any other line, so `[[name]]`, an array
+/// table, is not a table header.
+fn toml_section_name(line: &str) -> Option<&str> {
+    let line = line.trim();
+    let rest = line.strip_prefix('[')?;
+    if rest.starts_with('[') {
+        return None;
+    }
+    let end = outside_strings(rest).find_map(|(i, ch)| (ch == ']').then_some(i))?;
+    let inner = rest[..end].trim();
+    // Nothing but a comment may follow the closing bracket.
+    let after = rest[end + 1..].trim();
+    if !after.is_empty() && !after.starts_with('#') {
+        return None;
+    }
+    (!inner.is_empty()).then_some(inner)
+}
+
+/// How deeply a line of a value sits inside an unfinished multi-line array:
+/// every `[` outside a string opens a bracket and every `]` outside a string
+/// closes one.
+fn toml_bracket_depth(line: &str, depth: i32) -> i32 {
+    outside_strings(line).fold(depth, |depth, (_, ch)| match ch {
+        '[' => depth + 1,
+        ']' => depth - 1,
+        _ => depth,
+    })
+}
+
+/// The characters of `line` that sit outside a `'...'` or `"..."` string,
+/// with their positions. A `#` outside a string ends the line, as it starts
+/// a comment.
+fn outside_strings(line: &str) -> impl Iterator<Item = (usize, char)> + '_ {
+    let mut chars = line.char_indices();
+    // The quote character of the string we are inside, if any.
+    let mut string: Option<char> = None;
+    // Whether the next character of a `"..."` string is escaped.
+    let mut escaped = false;
+    std::iter::from_fn(move || {
+        loop {
+            let (i, ch) = chars.next()?;
+            match string {
+                Some(quote) => {
+                    if escaped {
+                        escaped = false;
+                    } else if quote == '"' && ch == '\\' {
+                        escaped = true;
+                    } else if ch == quote {
+                        string = None;
+                    }
+                }
+                None => {
+                    if ch == '#' {
+                        return None;
+                    }
+                    if ch == '"' || ch == '\'' {
+                        string = Some(ch);
+                    } else {
+                        return Some((i, ch));
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// The string value of `key = "value"` on one line.
+fn toml_string_value(line: &str, key: &str) -> Option<String> {
+    let rest = line.strip_prefix(key)?.trim_start();
+    let rest = rest.strip_prefix('=')?.trim_start();
+    let quote = rest.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let rest = &rest[quote.len_utf8()..];
+    let end = rest.find(quote)?;
+    Some(rest[..end].to_string())
+}
+
+/// The top-level `"version"` of a package.json, read without a JSON parser.
+fn read_package_json_version(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    json_top_level_string(&text, "version")
+}
+
+/// Reads a string member of the root object of a JSON document.
+fn json_top_level_string(text: &str, key: &str) -> Option<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut index = 0;
+    let mut depth = 0usize;
+    while index < chars.len() {
+        match chars[index] {
+            '"' => {
+                let (name, next) = read_json_string(&chars, index);
+                index = next;
+                let mut peek = index;
+                while peek < chars.len() && chars[peek].is_whitespace() {
+                    peek += 1;
+                }
+                if depth != 1 || peek >= chars.len() || chars[peek] != ':' {
+                    continue;
+                }
+                peek += 1;
+                while peek < chars.len() && chars[peek].is_whitespace() {
+                    peek += 1;
+                }
+                if name != key {
+                    continue;
+                }
+                if peek < chars.len() && chars[peek] == '"' {
+                    return Some(read_json_string(&chars, peek).0);
+                }
+                return None;
+            }
+            '{' | '[' => {
+                depth += 1;
+                index += 1;
+            }
+            '}' | ']' => {
+                depth = depth.saturating_sub(1);
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+/// Reads the JSON string that starts at the opening quote.
+fn read_json_string(chars: &[char], start: usize) -> (String, usize) {
+    let mut out = String::new();
+    let mut index = start + 1;
+    while index < chars.len() {
+        let ch = chars[index];
+        if ch == '\\' && index + 1 < chars.len() {
+            let escaped = chars[index + 1];
+            out.push(match escaped {
+                'n' => '\n',
+                't' => '\t',
+                'r' => '\r',
+                'b' => '\u{8}',
+                'f' => '\u{c}',
+                other => other,
+            });
+            index += 2;
+            continue;
+        }
+        if ch == '"' {
+            return (out, index + 1);
+        }
+        out.push(ch);
+        index += 1;
+    }
+    (out, index)
+}
+
+/// Makes a text safe to write as a frontmatter value: one line, no double
+/// quotes, no run of backslashes, no quote at the start and no quote or
+/// backslash at the end. The readers of a skill file are line parsers, not
+/// YAML: a value that starts or ends with a quote, or that ends with a
+/// backslash, would not survive them.
+fn skill_scalar(text: &str) -> String {
+    let mut flat = String::new();
+    let mut space = false;
+    for ch in text.chars() {
+        let ch = if ch == '\n' || ch == '\r' { ' ' } else { ch };
+        if ch.is_whitespace() {
+            if !space {
+                flat.push(' ');
+                space = true;
+            }
+            continue;
+        }
+        space = false;
+        flat.push(ch);
+    }
+    // A double quote becomes a single quote first: the readers treat both
+    // the same way, and a value that ended with a double quote would end
+    // with a single quote after the change, which the readers strip.
+    let flat = flat.replace('"', "'");
+    // One backslash only: a pair would be unescaped by one of the readers.
+    let mut collapsed = String::new();
+    let mut backslash = false;
+    for ch in flat.chars() {
+        if ch == '\\' {
+            if !backslash {
+                collapsed.push('\\');
+            }
+            backslash = true;
+            continue;
+        }
+        backslash = false;
+        collapsed.push(ch);
+    }
+    // A pair of outer quotes goes as one.
+    let mut value = collapsed.trim().to_string();
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() >= 2 && chars[0] == '\'' && chars[chars.len() - 1] == '\'' {
+        value = chars[1..chars.len() - 1].iter().collect();
+    }
+    // What is left may not start with a quote, may not end with a quote and
+    // may not end with a backslash.
+    loop {
+        let before = value.clone();
+        value = value
+            .trim_start_matches(|c: char| c.is_whitespace() || c == '\'' || c == '"')
+            .trim_end_matches(|c: char| c.is_whitespace() || c == '\'' || c == '"' || c == '\\')
+            .to_string();
+        if value == before {
+            break;
+        }
+    }
+    value
+}
+
+/// The first sentence of the page's first note, for the skill frontmatter.
+fn skill_description(book: &Book, notes: &[Note], page: &Page) -> String {
+    let mut page_notes: Vec<&Note> = notes.iter().filter(|n| n.page == page.slug).collect();
+    page_notes.sort_by_key(|n| (n.order.unwrap_or(50), n.id.clone()));
+    let text = match page_notes.first() {
+        Some(note) => {
+            let body = drop_code_fences(&note.body);
+            resolve_links(&body, |inner| skill_link_text(book, inner))
+        }
+        None => String::new(),
+    };
+    let flat = collapse_whitespace(&text);
+    let mut description = first_sentence(&flat).unwrap_or_else(|| first_paragraph(&text));
+    description = skill_scalar(&description);
+    description = cut_at_word(&description, 300);
+    // The cut may leave a backslash at the end.
+    description = skill_scalar(&description);
+    if description.is_empty() {
+        description = skill_scalar(&format!("{} — {}", one_line_title(book), page.title));
+    }
+    description
+}
+
+/// Removes fenced code blocks from a text.
+fn drop_code_fences(text: &str) -> String {
+    let mut out = String::new();
+    let mut fence: Option<(char, usize)> = None;
+    for line in text.lines() {
+        let trimmed = line.trim_start_matches(' ');
+        let indent = line.len() - trimmed.len();
+        if indent <= 3 {
+            if let Some((ch, len)) = fence {
+                let count = trimmed.chars().take_while(|c| *c == ch).count();
+                let rest: String = trimmed.chars().skip(count).collect();
+                if count >= len && rest.trim().is_empty() {
+                    fence = None;
+                }
+                continue;
+            }
+            if let Some(ch @ ('`' | '~')) = trimmed.chars().next() {
+                let count = trimmed.chars().take_while(|c| *c == ch).count();
+                let rest: String = trimmed.chars().skip(count).collect();
+                if count >= 3 && (ch != '`' || !rest.contains('`')) {
+                    fence = Some((ch, count));
+                    continue;
+                }
+            }
+        }
+        if fence.is_some() {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+/// Collapses every run of whitespace into one space.
+fn collapse_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The text up to and including the first `.`, `!` or `?` that ends a
+/// sentence.
+fn first_sentence(text: &str) -> Option<String> {
+    let chars: Vec<char> = text.chars().collect();
+    for (index, ch) in chars.iter().enumerate() {
+        if matches!(ch, '.' | '!' | '?') {
+            let next = chars.get(index + 1);
+            if next.is_none() || next.is_some_and(|c| c.is_whitespace()) {
+                return Some(chars[..=index].iter().collect());
+            }
+        }
+    }
+    None
+}
+
+/// The first paragraph of a text: everything before the first blank line.
+/// Blank lines before the paragraph do not end it.
+fn first_paragraph(text: &str) -> String {
+    let mut lines = Vec::new();
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            if lines.is_empty() {
+                continue;
+            }
+            break;
+        }
+        lines.push(line);
+    }
+    collapse_whitespace(&lines.join("\n"))
+}
+
+/// Cuts a text to at most `limit` characters, at a word boundary. A text
+/// without any space in it is cut hard.
+fn cut_at_word(text: &str, limit: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= limit {
+        return text.to_string();
+    }
+    let mut end = limit;
+    while end > 0 && !chars[end - 1].is_whitespace() {
+        end -= 1;
+    }
+    if end == 0 {
+        // No word boundary: cut hard, so the text is not lost.
+        return chars[..limit].iter().collect();
+    }
+    chars[..end]
+        .iter()
+        .collect::<String>()
+        .trim_end()
+        .to_string()
+}
+
+/// The plain text of a `[[slug]]` or `[[slug|text]]` link.
+fn skill_link_text(book: &Book, inner: &str) -> String {
+    match inner.split_once('|') {
+        Some((_slug, label)) => label.trim().to_string(),
+        None => page_title(book, inner.trim()),
+    }
+}
+
+/// The title of a page, or the slug when the page is unknown.
+fn page_title(book: &Book, slug: &str) -> String {
+    if let Some(page) = book.pages.iter().find(|p| p.slug == slug) {
+        return page.title.clone();
+    }
+    if slug == STRUCTURE_SLUG {
+        return book.label("Code structure").to_string();
+    }
+    slug.to_string()
+}
+
+/// The book title as one line.
+fn one_line_title(book: &Book) -> String {
+    book.title.replace(['\n', '\r'], " ").trim().to_string()
+}
+
+/// The `name` of the skill: the book title, quoted when it would not parse.
+fn skill_name(book: &Book) -> String {
+    let name = skill_scalar(&book.title);
+    if name.contains(": ")
+        || name.contains(" #")
+        || name.starts_with('#')
+        || name.starts_with(['[', '{', '-', '*', '&', '!', '|', '>', '%', '@', '`'])
+        || name.ends_with(':')
+    {
+        // A quoted name holds no quote of its own: the readers would strip
+        // it and read another name.
+        let name = name.trim_end_matches('\'');
+        format!("\"{name}\"")
+    } else {
+        name
+    }
+}
+
+/// Renders `<out>/skill/<id>/SKILL.md`: one page as a skill for agents.
+fn render_skill(book: &Book, notes: &[Note], slug: &str) -> Result<(String, String)> {
+    let page = book
+        .pages
+        .iter()
+        .find(|p| p.slug == slug)
+        .with_context(|| format!("--skill-page: no page \"{slug}\" in {BOOK_FILE}"))?;
+    let id = skill_id(book);
+    let title = one_line_title(book);
+    let description = skill_description(book, notes, page);
+    let version = skill_version(book);
+    // A skill file is copied into a skill store, so it must not carry
+    // relative links: sources become permalinks and page links plain text.
+    let mut plain = book.clone();
+    plain.link_base = None;
+    let body = page_notes_body(&plain, notes, slug);
+    let body = resolve_links(&body, |inner| skill_link_text(&plain, inner));
+    let mut content = format!(
+        "---\nname: {}\ndescription: \"{}\"\nversion: {}\ntags: [{id}]\n---\n\n# {title}\n",
+        skill_name(book),
+        description,
+        version
+    );
+    if !body.trim().is_empty() {
+        content.push_str(&format!("\n{}\n", body.trim_end()));
+    }
+    Ok((format!("skill/{id}/SKILL.md"), content))
 }
 
 /// Prints the generated code structure to stdout.
@@ -3451,7 +3988,7 @@ mod tests {
         symlink("../outside", repo.join("out")).unwrap();
         let before = fs::read(book.join(BOOK_FILE)).unwrap();
 
-        let error = build(&book, None, false).unwrap_err().to_string();
+        let error = build(&book, None, false, None).unwrap_err().to_string();
         assert_eq!(
             error,
             format!(
@@ -3470,7 +4007,7 @@ mod tests {
         );
         assert_eq!(fs::read_dir(&outside).unwrap().count(), 2);
 
-        build(&book, Some(outside.clone()), false).unwrap();
+        build(&book, Some(outside.clone()), false, None).unwrap();
         assert!(!outside.join("victim.md").exists());
         assert!(outside.join("index.md").is_file());
         assert!(outside.join(BUILD_MARKER).is_file());
@@ -3488,7 +4025,7 @@ mod tests {
         fs::write(outside.join("victim"), "keep").unwrap();
         symlink(&outside, repo.join("docs")).unwrap();
         let before = fs::read(book.join(BOOK_FILE)).unwrap();
-        let error = build(&book, None, false).unwrap_err().to_string();
+        let error = build(&book, None, false, None).unwrap_err().to_string();
         assert_eq!(
             error,
             format!(
@@ -3520,7 +4057,7 @@ mod tests {
         .unwrap();
         let outside = temp_dir("configured-output-outside");
         symlink(&outside, repo.join("alias")).unwrap();
-        let error = build(&book, None, false).unwrap_err().to_string();
+        let error = build(&book, None, false, None).unwrap_err().to_string();
         assert_eq!(
             error,
             format!(
@@ -3532,7 +4069,7 @@ mod tests {
             )
         );
         assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
-        build(&book, Some(outside.clone()), false).unwrap();
+        build(&book, Some(outside.clone()), false, None).unwrap();
         assert!(outside.join("index.md").is_file());
         assert!(outside.join(BUILD_MARKER).is_file());
         assert!(!outside.join("generated").exists());
@@ -3549,7 +4086,7 @@ mod tests {
         fs::create_dir(&target).unwrap();
         symlink(&target, &docs).unwrap();
         assert!(
-            build(&book, None, false)
+            build(&book, None, false, None)
                 .unwrap_err()
                 .to_string()
                 .contains("output directory resolves outside the repository")
@@ -3558,7 +4095,7 @@ mod tests {
         fs::remove_file(&docs).unwrap();
         symlink(repo.join("missing"), &docs).unwrap();
         assert!(
-            build(&book, None, false)
+            build(&book, None, false, None)
                 .unwrap_err()
                 .to_string()
                 .contains("output directory resolves outside the repository")
@@ -3589,7 +4126,7 @@ mod tests {
         )
         .unwrap();
         symlink(&outside, out.join("zh")).unwrap();
-        let error = build(&book, Some(out.clone()), true)
+        let error = build(&book, Some(out.clone()), true, None)
             .unwrap_err()
             .to_string();
         assert!(
@@ -3612,7 +4149,7 @@ mod tests {
         fs::write(&outside, &manifest).unwrap();
         fs::write(out.join("all.md"), "old").unwrap();
         symlink(&outside, out.join(BUILD_MARKER)).unwrap();
-        let error = build(&book, Some(out.clone()), true)
+        let error = build(&book, Some(out.clone()), true, None)
             .unwrap_err()
             .to_string();
         assert!(
@@ -3676,7 +4213,7 @@ mod tests {
         let outside = repo.join("outside.md");
         fs::write(&outside, "keep").unwrap();
         symlink(&outside, out.join("all.md")).unwrap();
-        let error = build(&book, Some(out), true).unwrap_err().to_string();
+        let error = build(&book, Some(out), true, None).unwrap_err().to_string();
         assert!(
             error.contains("refusing to write outside the output directory"),
             "{error}"
@@ -3814,7 +4351,7 @@ mod tests {
         let manifest = format!("{MANIFEST_HEADER}\n");
         fs::write(&outside, &manifest).unwrap();
         fs::hard_link(&outside, out.join(BUILD_MARKER)).unwrap();
-        build(&book, Some(out.clone()), false).unwrap();
+        build(&book, Some(out.clone()), false, None).unwrap();
         assert_eq!(fs::read_to_string(outside).unwrap(), manifest);
         assert_ne!(
             fs::read_to_string(out.join(BUILD_MARKER)).unwrap(),
@@ -3855,6 +4392,20 @@ mod tests {
         assert_eq!(load_book(&nested).unwrap().repo, "../..");
     }
 
+    /// The nearest book above `dir`, the way discovery finds it.
+    fn nearest_book_above(dir: &Path) -> Option<PathBuf> {
+        for ancestor in dir.ancestors() {
+            let candidate = ancestor.join(".codocia");
+            if candidate.join(BOOK_FILE).is_file() {
+                return Some(candidate);
+            }
+            if ancestor.join(BOOK_FILE).is_file() && ancestor.join(NOTES_DIR).is_dir() {
+                return Some(ancestor.to_path_buf());
+            }
+        }
+        None
+    }
+
     // Spawn the test binary instead of changing the process-wide working directory:
     // other tests run in parallel and may be using relative paths.
     #[test]
@@ -3880,11 +4431,17 @@ mod tests {
         let (repo, external) = fixture();
         let book = init_in_repo(&repo);
         let unrelated = temp_dir("unrelated");
-        for (cwd, expected) in [
-            (&repo.join("src/core"), book.to_str().unwrap()),
-            (&external, external.to_str().unwrap()),
-            (&unrelated, "missing"),
-        ] {
+        let mut cases = vec![
+            (repo.join("src/core"), book.to_string_lossy().to_string()),
+            (external.clone(), external.to_string_lossy().to_string()),
+        ];
+        // The temporary directory can sit inside a checkout that has a book
+        // of its own; discovery then finds that nearest book, and only a
+        // directory without any book above it may report "missing".
+        if nearest_book_above(&unrelated).is_none() {
+            cases.push((unrelated.clone(), "missing".to_string()));
+        }
+        for (cwd, expected) in cases {
             let output = Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
@@ -3922,11 +4479,11 @@ mod tests {
             original.replace("repo: ..\n", "repo: ..\nout: docs/public\n"),
         )
         .unwrap();
-        build(&book, None, false).unwrap();
+        build(&book, None, false, None).unwrap();
         assert!(repo.join("docs/public/README.md").is_file());
         let page = fs::read_to_string(repo.join("docs/public/01-overview.md")).unwrap();
         assert!(page.contains("../../src/core/engine.rs#L2-L4"), "{page}");
-        build(&book, Some(repo.join("custom-out")), false).unwrap();
+        build(&book, Some(repo.join("custom-out")), false, None).unwrap();
         assert!(repo.join("custom-out/README.md").is_file());
         for invalid in ["/tmp/x", "../x"] {
             fs::write(
@@ -3975,7 +4532,7 @@ mod tests {
         );
         let book = init_in_repo(&repo);
         assert!(git_remote_url(&repo).is_none());
-        build(&book, None, false).unwrap();
+        build(&book, None, false, None).unwrap();
         let index = fs::read_to_string(repo.join("docs/README.md")).unwrap();
         assert!(index.contains("Generated from demo @ `"), "{index}");
     }
@@ -3993,7 +4550,7 @@ mod tests {
         .unwrap();
         git(&repo, &["add", ".codocia"]);
         check(&book, None).unwrap();
-        build(&book, None, false).unwrap();
+        build(&book, None, false, None).unwrap();
         assert!(repo.join("docs/README.md").is_file());
         let page = fs::read_to_string(repo.join("docs/01-overview.md")).unwrap();
         assert!(page.contains("../src/core/engine.rs#L2-L4"), "{page}");
@@ -4028,7 +4585,7 @@ mod tests {
             "`run` calls `step`.",
         )
         .unwrap();
-        build(&book, None, false).unwrap();
+        build(&book, None, false, None).unwrap();
         git(&repo, &["add", ".codocia", "docs"]);
         git(
             &repo,
@@ -4241,7 +4798,7 @@ mod tests {
         .unwrap();
         assert!(errors(&book).errors.is_empty());
 
-        build(&book, Some(repo.join("docs")), false).unwrap();
+        build(&book, Some(repo.join("docs")), false, None).unwrap();
         let en = fs::read_to_string(repo.join("docs/01-overview.md")).unwrap();
         let zh = fs::read_to_string(repo.join("docs/zh/01-overview.md")).unwrap();
         assert!(
@@ -4508,7 +5065,7 @@ mod tests {
             ],
         );
         let code_commit = current_commit(&repo).unwrap();
-        build(&book, None, false).unwrap();
+        build(&book, None, false, None).unwrap();
         assert_eq!(load_book(&book).unwrap().commit, code_commit);
         git(&repo, &["add", ".codocia"]);
         git(
@@ -4523,7 +5080,7 @@ mod tests {
                 "book",
             ],
         );
-        build(&book, None, false).unwrap();
+        build(&book, None, false, None).unwrap();
         assert_eq!(load_book(&book).unwrap().commit, code_commit);
     }
 
@@ -4578,9 +5135,9 @@ mod tests {
                 "change",
             ],
         );
-        assert!(build(&book, None, false).is_err());
+        assert!(build(&book, None, false, None).is_err());
         assert_eq!(load_book(&book).unwrap().commit, old);
-        build(&book, None, true).unwrap();
+        build(&book, None, true, None).unwrap();
         assert_eq!(
             load_book(&book).unwrap().commit,
             current_commit(&repo).unwrap()
@@ -4637,7 +5194,7 @@ mod tests {
             "`run` calls `step`.",
         )
         .unwrap();
-        build(&book, Some(repo.join("docs")), false).unwrap();
+        build(&book, Some(repo.join("docs")), false, None).unwrap();
         let pinned = load_book(&book).unwrap().commit;
         git(&repo, &["add", "docs"]);
         git(
@@ -4709,7 +5266,7 @@ mod tests {
         let loaded = load_book(&book).unwrap();
         let report = check_book(&loaded, &load_notes(&loaded).unwrap()).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
-        build(&book, None, false).unwrap();
+        build(&book, None, false, None).unwrap();
     }
 
     #[test]
@@ -5194,7 +5751,7 @@ mod tests {
         let report = check_book(&loaded, &notes).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
 
-        build(&book, None, false).unwrap();
+        build(&book, None, false, None).unwrap();
         let page = fs::read_to_string(book.join("out/01-overview.md")).unwrap();
         assert!(page.contains("## Engine loop"));
         assert!(page.contains("[Overview](01-overview.md)"));
@@ -5373,17 +5930,17 @@ mod tests {
         let out = book.join("shared");
         fs::create_dir_all(&out).unwrap();
         fs::write(out.join("keep.txt"), "x").unwrap();
-        build(&book, Some(out.clone()), false).unwrap();
+        build(&book, Some(out.clone()), false, None).unwrap();
         assert!(out.join("keep.txt").exists());
         assert!(out.join("01-overview.md").exists());
         // Rebuilding replaces only its own files.
-        build(&book, Some(out.clone()), false).unwrap();
+        build(&book, Some(out.clone()), false, None).unwrap();
         assert!(out.join("keep.txt").exists());
         // A hand-written file with a generated name stops the build.
         let other = book.join("other");
         fs::create_dir_all(&other).unwrap();
         fs::write(other.join("all.md"), "mine").unwrap();
-        assert!(build(&book, Some(other.clone()), false).is_err());
+        assert!(build(&book, Some(other.clone()), false, None).is_err());
         assert_eq!(fs::read_to_string(other.join("all.md")).unwrap(), "mine");
     }
 
@@ -5395,7 +5952,7 @@ mod tests {
         fs::create_dir_all(&out).unwrap();
         fs::write(out.join(BUILD_MARKER), "bogus").unwrap();
         fs::write(out.join("notes.md"), "hand-written").unwrap();
-        let err = build(&book, Some(out.clone()), false)
+        let err = build(&book, Some(out.clone()), false, None)
             .unwrap_err()
             .to_string();
         assert_eq!(
@@ -5432,7 +5989,7 @@ mod tests {
             ),
         )
         .unwrap();
-        build(&book, Some(out.clone()), false).unwrap();
+        build(&book, Some(out.clone()), false, None).unwrap();
         assert_eq!(
             fs::read_to_string(outside.join("absolute.md")).unwrap(),
             "absolute"
@@ -5452,7 +6009,7 @@ mod tests {
         )
         .unwrap();
         let out = book.join("output");
-        build(&book, Some(out.clone()), false).unwrap();
+        build(&book, Some(out.clone()), false, None).unwrap();
         let all = fs::read_to_string(out.join("all.md")).unwrap();
         assert!(all.contains("#### Heading"), "{all}");
         assert!(
@@ -5571,7 +6128,7 @@ mod tests {
         )
         .unwrap();
         let out = repo.join("docs");
-        build(&book, Some(out.clone()), false).unwrap();
+        build(&book, Some(out.clone()), false, None).unwrap();
         assert!(out.join("README.md").exists());
         assert!(!out.join("index.md").exists());
         let page = fs::read_to_string(out.join("01-overview.md")).unwrap();
@@ -5867,5 +6424,655 @@ mod tests {
             assert_eq!(unquote(&written), value, "{written}");
             assert_eq!(quoted_item(&written).as_deref(), Some(value), "{written}");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // SKILL.md
+
+    /// A book with one note on the `overview` page.
+    fn skill_fixture() -> (PathBuf, PathBuf) {
+        let (repo, book) = fixture();
+        add(
+            &book,
+            "loop",
+            &["src/core/engine.rs:2-4"],
+            "The `run` function calls `step`.",
+        )
+        .unwrap();
+        (repo, book)
+    }
+
+    /// Adds a note with the given body to the `overview` page.
+    fn add_body(book: &Path, id: &str, body: &str) {
+        note_add(&NoteAddOptions {
+            book: book.to_path_buf(),
+            page: "overview".to_string(),
+            id: id.to_string(),
+            title: Some("Engine loop".to_string()),
+            order: None,
+            evidence: vec!["src/core/engine.rs:2-4".to_string()],
+            add_evidence: Vec::new(),
+            body: body.to_string(),
+            replace: true,
+        })
+        .unwrap();
+    }
+
+    /// Builds a skill file and returns its lines.
+    fn skill_lines(book: &Path, out: &Path) -> Vec<String> {
+        build(book, Some(out.to_path_buf()), false, Some("overview")).unwrap();
+        let text = fs::read_to_string(out.join("skill/repo/SKILL.md")).unwrap();
+        text.lines().map(str::to_string).collect()
+    }
+
+    /// The link targets of a Markdown text.
+    fn link_targets(text: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut rest = text;
+        while let Some(start) = rest.find("](") {
+            let after = &rest[start + 2..];
+            let Some(end) = after.find(')') else { break };
+            out.push(after[..end].to_string());
+            rest = &after[end + 1..];
+        }
+        out
+    }
+
+    #[test]
+    fn build_with_skill_page_writes_a_skill_file() {
+        let (_repo, book) = skill_fixture();
+        let out = temp_dir("skill-out");
+        build(&book, Some(out.clone()), false, Some("overview")).unwrap();
+        let path = out.join("skill/repo/SKILL.md");
+        assert!(path.is_file(), "{}", path.display());
+        let text = fs::read_to_string(&path).unwrap();
+        let expected = "\
+---
+name: Demo
+description: \"The `run` function calls `step`.\"
+version: 0.1.0
+tags: [repo]
+---
+
+# Demo
+
+## Engine loop
+
+The `run` function calls `step`.
+
+<sub>Sources: `src/core/engine.rs:2-4`</sub>
+";
+        assert_eq!(text, expected);
+        // The page itself is unchanged by the flag.
+        let page = fs::read_to_string(out.join("01-overview.md")).unwrap();
+        assert!(page.contains("## Engine loop"), "{page}");
+        // The file is recorded in the build marker like every other output.
+        let marker = fs::read_to_string(out.join(BUILD_MARKER)).unwrap();
+        assert!(marker.contains("skill/repo/SKILL.md"), "{marker}");
+    }
+
+    #[test]
+    fn skill_frontmatter_is_skrun_safe() {
+        let (_repo, book) = skill_fixture();
+        let out = temp_dir("skill-front");
+        let lines = skill_lines(&book, &out);
+        assert_eq!(lines[0], "---");
+        let end = lines.iter().skip(1).position(|l| l == "---").unwrap() + 1;
+        assert!(end > 1);
+        for line in &lines[1..end] {
+            let (key, value) = line.split_once(": ").expect(line);
+            assert!(!key.is_empty() && !key.contains(' '), "{line}");
+            assert!(!value.contains('\n'), "{line}");
+            assert!(!value.trim().is_empty(), "{line}");
+        }
+        let keys: Vec<&str> = lines[1..end]
+            .iter()
+            .map(|l| l.split(':').next().unwrap())
+            .collect();
+        assert_eq!(keys, vec!["name", "description", "version", "tags"]);
+        assert_eq!(lines[end - 1], "tags: [repo]");
+    }
+
+    /// A minimal book for the pure helpers.
+    fn plain_book(repo: &Path, title: &str) -> Book {
+        Book {
+            dir: repo.to_path_buf(),
+            title: title.to_string(),
+            repo: repo.to_string_lossy().to_string(),
+            out: None,
+            commit: String::new(),
+            remote: None,
+            lang: "en".to_string(),
+            max_pages: 8,
+            max_page_words: 900,
+            max_note_words: 180,
+            max_words: 0,
+            pages: vec![Page {
+                slug: "overview".to_string(),
+                title: "Overview".to_string(),
+            }],
+            ignore: Vec::new(),
+            langs: Vec::new(),
+            translations: Vec::new(),
+            intro: String::new(),
+            link_base: None,
+        }
+    }
+
+    #[test]
+    fn skill_id_normalizes_the_repository_name() {
+        let root = temp_dir("skill-id");
+        let repo = root.join("My Repo (v2)!");
+        fs::create_dir_all(&repo).unwrap();
+        let book = plain_book(&repo, "Demo");
+        assert_eq!(skill_id(&book), "my-repo--v2");
+        // Nothing left after the trimming means the plain name.
+        let empty = root.join("-.-");
+        fs::create_dir_all(&empty).unwrap();
+        let book = plain_book(&empty, "Demo");
+        assert_eq!(skill_id(&book), "skill");
+    }
+
+    #[test]
+    fn skill_name_quotes_a_title_that_would_not_parse() {
+        let root = temp_dir("skill-name");
+        let book = plain_book(&root, "Demo: the book");
+        assert_eq!(skill_name(&book), "\"Demo: the book\"");
+        let book = plain_book(&root, "Demo #1");
+        assert_eq!(skill_name(&book), "\"Demo #1\"");
+        // A title that is only quotes holds no quote of its own.
+        let book = plain_book(&root, "'Demo'");
+        assert_eq!(skill_name(&book), "Demo");
+        let book = plain_book(&root, "\"Demo\"");
+        assert_eq!(skill_name(&book), "Demo");
+        let book = plain_book(&root, "Demo");
+        assert_eq!(skill_name(&book), "Demo");
+        let book = plain_book(&root, "Demo\nBook");
+        assert_eq!(skill_name(&book), "Demo Book");
+        // A double quote becomes a single quote, and a quote at the end of
+        // the name goes: the readers strip it. The old expectation,
+        // `The 'x'`, held the bug: the readers read that name differently.
+        let book = plain_book(&root, "The \"x\"");
+        assert_eq!(skill_name(&book), "The 'x");
+        // A title that starts like a comment or like a list is quoted.
+        let book = plain_book(&root, "#hash title");
+        assert_eq!(skill_name(&book), "\"#hash title\"");
+        let book = plain_book(&root, "[x] y");
+        assert_eq!(skill_name(&book), "\"[x] y\"");
+        // A pair of backslashes would be unescaped by one reader.
+        let book = plain_book(&root, "a\\\\b");
+        assert_eq!(skill_name(&book), "a\\b");
+        // A quoted name holds no quote of its own: the readers would strip
+        // it and read another name.
+        let book = plain_book(&root, "#Demo'");
+        assert_eq!(skill_name(&book), "\"#Demo\"");
+        let book = plain_book(&root, "#Demo\"");
+        assert_eq!(skill_name(&book), "\"#Demo\"");
+    }
+
+    #[test]
+    fn skill_scalar_never_starts_or_ends_with_a_quote() {
+        // A value that starts or ends with a quote is read differently by
+        // the two readers: one strips the quote, the other keeps it.
+        for input in [
+            "\"a\"",
+            "'a'",
+            "a\"",
+            "\"a",
+            "x 'y'",
+            "x \"y\"",
+            "'\"a\"'",
+            "a\\\\",
+            "a\\",
+            "\\\\a\\\\b",
+            "  \"  spaced  \"  ",
+            "it's",
+        ] {
+            let value = skill_scalar(input);
+            assert!(!value.starts_with(['\'', '"']), "{input:?} -> {value:?}");
+            assert!(!value.ends_with(['\'', '"']), "{input:?} -> {value:?}");
+            assert!(!value.contains('"'), "{input:?} -> {value:?}");
+            assert!(!value.contains("\\\\"), "{input:?} -> {value:?}");
+            assert!(!value.ends_with('\\'), "{input:?} -> {value:?}");
+        }
+        // A quote inside a value stays.
+        assert_eq!(skill_scalar("it's"), "it's");
+    }
+
+    #[test]
+    fn skill_version_reads_cargo_package() {
+        let (repo, book) = skill_fixture();
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"1.2.3\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-cargo");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 1.2.3".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_reads_cargo_workspace_package() {
+        let (repo, book) = skill_fixture();
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n\n[workspace.package]\nversion = \"2.0.1\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-workspace");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 2.0.1".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_reads_pyproject() {
+        let (repo, book) = skill_fixture();
+        fs::write(
+            repo.join("pyproject.toml"),
+            "[project]\nname = \"demo\"\nversion = \"3.4.5\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-pyproject");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 3.4.5".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_reads_package_json() {
+        let (repo, book) = skill_fixture();
+        fs::write(
+            repo.join("package.json"),
+            "{\n  \"name\": \"demo\",\n  \"version\": \"4.5.6\",\n  \"dependencies\": {\n    \"version\": \"9.9.9\"\n  }\n}\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-npm");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 4.5.6".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_skips_a_version_that_needs_quoting() {
+        let (repo, book) = skill_fixture();
+        // The escape in the JSON file is a newline: the version would end
+        // the line of the frontmatter.
+        fs::write(
+            repo.join("package.json"),
+            "{\n  \"name\": \"demo\",\n  \"version\": \"1.0\\nrequires: [x]\",\n}\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-npm-unsafe");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 0.1.0".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_skips_an_empty_version() {
+        let (repo, book) = skill_fixture();
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-empty-version");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 0.1.0".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_keeps_a_prerelease_version() {
+        let (repo, book) = skill_fixture();
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"1.2.3-beta.1+build\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-prerelease");
+        let lines = skill_lines(&book, &out);
+        assert!(
+            lines.contains(&"version: 1.2.3-beta.1+build".to_string()),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn skill_version_falls_back_to_the_default() {
+        let (repo, book) = skill_fixture();
+        // A workspace version is not a version of its own.
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion.workspace = true\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-fallback");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 0.1.0".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn toml_headers_allow_a_comment_spaces_and_quotes() {
+        assert_eq!(toml_section_name("[package] # main"), Some("package"));
+        assert_eq!(toml_section_name("[ package ]"), Some("package"));
+        // A quoted key is part of the name, brackets inside it included.
+        assert_eq!(
+            toml_section_name("[target.'cfg(unix)'.dependencies.libc]"),
+            Some("target.'cfg(unix)'.dependencies.libc")
+        );
+        // An array table is not a table header, and nothing but a comment
+        // may follow the closing bracket.
+        assert_eq!(toml_section_name("[[bin]]"), None);
+        assert_eq!(toml_section_name("[package] and more"), None);
+    }
+
+    #[test]
+    fn toml_brackets_inside_a_string_or_a_comment_do_not_count() {
+        // A bracket inside a string value or inside a comment is part of it.
+        assert_eq!(toml_bracket_depth("description = \"a ] b [\"", 0), 0);
+        assert_eq!(toml_bracket_depth("keywords = [ # [x]", 0), 1);
+        // A line of an array value keeps the value open.
+        assert_eq!(toml_bracket_depth("[\"a\", \"b\"],", 1), 1);
+        assert_eq!(toml_bracket_depth("]", 1), 0);
+    }
+
+    #[test]
+    fn skill_version_skips_a_version_below_a_header_with_a_quoted_key() {
+        let (repo, book) = skill_fixture();
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion.workspace = true\n\n[target.'cfg(unix)'.dependencies.libc]\nversion = \"0.2\"\n\n[workspace.package]\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-quoted-key");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 1.0.0".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_skips_a_version_of_an_array_table() {
+        let (repo, book) = skill_fixture();
+        // An array table never opens a section that can hold the version.
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\n\n[[bin]]\nname = \"demo\"\nversion = \"9.9\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-array-table");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 0.1.0".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_reads_a_version_after_a_value_with_brackets() {
+        let (repo, book) = skill_fixture();
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\ndescription = \"a ] b [\"\nversion = \"3.0.0\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-brackets-in-value");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 3.0.0".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_reads_a_version_after_a_multi_line_array() {
+        let (repo, book) = skill_fixture();
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nkeywords = [\n[\"a\", \"b\"],\n]\nversion = \"1.4.2\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-toml-array");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 1.4.2".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_version_reads_a_commented_header() {
+        let (repo, book) = skill_fixture();
+        fs::write(
+            repo.join("Cargo.toml"),
+            "[ package ] # main\nname = \"demo\"\nversion = \"1.4.2\"\n",
+        )
+        .unwrap();
+        let out = temp_dir("skill-toml-comment");
+        let lines = skill_lines(&book, &out);
+        assert!(lines.contains(&"version: 1.4.2".to_string()), "{lines:?}");
+    }
+
+    #[test]
+    fn skill_description_takes_the_first_sentence() {
+        let (_repo, book) = skill_fixture();
+        add_body(
+            &book,
+            "loop",
+            "The `run` function calls `step`. Then it waits for the next event.",
+        );
+        let out = temp_dir("skill-sentence");
+        let lines = skill_lines(&book, &out);
+        // The note with the lowest order comes first, and only its first
+        // sentence describes the skill.
+        let description = lines
+            .iter()
+            .find(|l| l.starts_with("description: "))
+            .unwrap();
+        assert_eq!(
+            description,
+            "description: \"The `run` function calls `step`.\""
+        );
+        // The body keeps the whole note.
+        let text = fs::read_to_string(out.join("skill/repo/SKILL.md")).unwrap();
+        assert!(text.contains("Then it waits for the next event."), "{text}");
+    }
+
+    #[test]
+    fn skill_description_replaces_page_links_and_quotes() {
+        let (_repo, book) = skill_fixture();
+        let loaded = load_book(&book).unwrap();
+        let notes = load_notes(&loaded).unwrap();
+        let page = loaded.pages[0].clone();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "The `run` function calls `step`.");
+        // A page link becomes the page title, a quote becomes a single quote.
+        let mut notes = notes.clone();
+        notes[0].body = "See [[overview]] and say \"hello\" now.".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "See Overview and say 'hello' now.");
+        // A link with its own text keeps that text.
+        notes[0].body = "See [[overview|the page]] now.".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "See the page now.");
+        // A long first sentence is cut at a word boundary.
+        notes[0].body = format!("{}.", "word ".repeat(100));
+        let text = skill_description(&loaded, &notes, &page);
+        assert!(text.chars().count() <= 300, "{}", text.chars().count());
+        assert!(text.ends_with("word"), "{text}");
+        // A note without any sentence keeps its first paragraph.
+        notes[0].body =
+            "First paragraph without a terminator\n\nSecond paragraph without one".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "First paragraph without a terminator");
+        // An empty note falls back to the book and page title.
+        notes[0].body = String::new();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "Demo — Overview");
+    }
+
+    #[test]
+    fn skill_description_is_safe_to_quote() {
+        let (_repo, book) = skill_fixture();
+        let loaded = load_book(&book).unwrap();
+        let notes = load_notes(&loaded).unwrap();
+        let page = loaded.pages[0].clone();
+        let mut notes = notes.clone();
+        // A leading quote would end the quoted value for one of the readers.
+        notes[0].body = "\"run\" starts here.".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "run' starts here.");
+        // A pair of backslashes would be unescaped by one of the readers.
+        notes[0].body = "C:\\\\path\\\\x".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "C:\\path\\x");
+        // A sentence that ends with a backslash loses it.
+        notes[0].body = "The path ends with a backslash\\".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "The path ends with a backslash");
+        // A cut never leaves a trailing quote: the readers would strip it.
+        notes[0].body = format!("{}' tail words and more", "a".repeat(299));
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "a".repeat(299));
+        assert!(!text.ends_with('\''), "{text}");
+        // The same for a sentence that ends with a quote.
+        notes[0].body = "He said \"hi\"".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert!(!text.ends_with('\''), "{text}");
+        // A description without a terminator keeps its whole paragraph, and
+        // the quote at its end goes: the readers strip it.
+        notes[0].body = "It prints \"done\"".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "It prints 'done");
+    }
+
+    #[test]
+    fn skill_description_skips_a_leading_code_block() {
+        let (_repo, book) = skill_fixture();
+        let loaded = load_book(&book).unwrap();
+        let notes = load_notes(&loaded).unwrap();
+        let page = loaded.pages[0].clone();
+        let mut notes = notes.clone();
+        // The code block goes, and the paragraph after it describes the
+        // skill.
+        notes[0].body =
+            "```rust\nlet x = 1;\n```\n\nThe engine waits for the next event".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "The engine waits for the next event");
+        // With a terminator, the first sentence of that paragraph is used.
+        notes[0].body = "```rust\nlet x = 1;\n```\n\nThe engine waits. Then it stops.".to_string();
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text, "The engine waits.");
+    }
+
+    #[test]
+    fn first_paragraph_skips_leading_blank_lines() {
+        assert_eq!(first_paragraph("\n\n  \nHello\n\nWorld"), "Hello");
+    }
+
+    #[test]
+    fn cut_at_word_cuts_a_text_without_spaces() {
+        let text = "字".repeat(400);
+        let cut = cut_at_word(&text, 300);
+        assert_eq!(cut.chars().count(), 300);
+        // The description of a note without any space keeps its first 300
+        // characters.
+        let (_repo, book) = skill_fixture();
+        let loaded = load_book(&book).unwrap();
+        let notes = load_notes(&loaded).unwrap();
+        let page = loaded.pages[0].clone();
+        let mut notes = notes.clone();
+        notes[0].body = "字".repeat(400);
+        let text = skill_description(&loaded, &notes, &page);
+        assert_eq!(text.chars().count(), 300);
+    }
+
+    #[test]
+    fn skill_links_are_absolute() {
+        let (_repo, book) = skill_fixture();
+        let mut loaded = load_book(&book).unwrap();
+        loaded.remote = Some("https://github.com/acme/demo".to_string());
+        fs::write(book.join(BOOK_FILE), render_book(&loaded)).unwrap();
+        let out = temp_dir("skill-remote");
+        build(&book, Some(out.clone()), false, Some("overview")).unwrap();
+        let text = fs::read_to_string(out.join("skill/repo/SKILL.md")).unwrap();
+        let links = link_targets(&text);
+        assert!(!links.is_empty(), "{text}");
+        for link in &links {
+            assert!(
+                link.starts_with("https://github.com/acme/demo/"),
+                "{link} in {text}"
+            );
+        }
+        assert!(!text.contains("](../"), "{text}");
+        // The page itself uses the same permalinks.
+        let page = fs::read_to_string(out.join("01-overview.md")).unwrap();
+        assert!(
+            page.contains("https://github.com/acme/demo/blob/"),
+            "{page}"
+        );
+    }
+
+    #[test]
+    fn skill_without_remote_has_no_relative_links() {
+        let (_repo, book) = skill_fixture();
+        let out = temp_dir("skill-plain");
+        build(&book, Some(out.clone()), false, Some("overview")).unwrap();
+        let text = fs::read_to_string(out.join("skill/repo/SKILL.md")).unwrap();
+        assert!(!text.contains("](../"), "{text}");
+        assert!(text.contains("`src/core/engine.rs:2-4`"), "{text}");
+    }
+
+    #[test]
+    fn skill_page_must_exist() {
+        let (_repo, book) = skill_fixture();
+        // The output folder does not exist yet: a wrong page writes nothing.
+        let out = temp_dir("skill-missing").join("out");
+        let error = build(&book, Some(out.clone()), false, Some("nope"))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(error, "--skill-page: no page \"nope\" in book.md");
+        assert!(!out.exists(), "{}", out.display());
+    }
+
+    #[test]
+    fn build_without_the_skill_page_writes_no_skill_file() {
+        let (_repo, book) = skill_fixture();
+        let out = temp_dir("skill-none");
+        build(&book, Some(out.clone()), false, None).unwrap();
+        assert!(!out.join("skill").exists(), "{}", out.display());
+        let marker = fs::read_to_string(out.join(BUILD_MARKER)).unwrap();
+        assert!(!marker.contains("skill/"), "{marker}");
+        let mut names: Vec<String> = fs::read_dir(&out)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                ".codocia-build".to_string(),
+                "01-overview.md".to_string(),
+                "all.md".to_string(),
+                "index.md".to_string(),
+                "structure.md".to_string(),
+            ]
+        );
+        // The flag only adds the skill file: the pages are the same.
+        let with = temp_dir("skill-none-with");
+        build(&book, Some(with.clone()), false, Some("overview")).unwrap();
+        assert_eq!(
+            fs::read(out.join("01-overview.md")).unwrap(),
+            fs::read(with.join("01-overview.md")).unwrap()
+        );
+        assert_eq!(
+            fs::read(out.join("all.md")).unwrap(),
+            fs::read(with.join("all.md")).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_stale_skill_file_is_removed() {
+        let (_repo, book) = skill_fixture();
+        let out = temp_dir("skill-stale");
+        build(&book, Some(out.clone()), false, Some("overview")).unwrap();
+        assert!(out.join("skill/repo/SKILL.md").is_file());
+        build(&book, Some(out.clone()), false, None).unwrap();
+        assert!(!out.join("skill/repo/SKILL.md").exists());
+        // The empty folder of the skill goes with the file.
+        assert!(
+            !out.join("skill").exists(),
+            "{}",
+            out.join("skill").display()
+        );
+        let marker = fs::read_to_string(out.join(BUILD_MARKER)).unwrap();
+        assert!(!marker.contains("skill/"), "{marker}");
     }
 }
